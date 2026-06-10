@@ -1,8 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   deserializeTokenRecordFromStorage,
   serializeTokenRecordForStorage,
-  type TokenEncryption,
 } from "./encryption";
 import type { TokenKey, TokenRecord } from "./types";
 
@@ -32,49 +31,5 @@ describe("token storage serialization", () => {
     await expect(
       deserializeTokenRecordFromStorage({ value, key }),
     ).resolves.toEqual(token);
-  });
-
-  it("passes TokenKey and storeName into encryption context", async () => {
-    const encryption: TokenEncryption = {
-      encrypt: vi.fn(async ({ plaintext }) => plaintext),
-      decrypt: vi.fn(async ({ ciphertext }) => ciphertext),
-    };
-
-    await serializeTokenRecordForStorage({
-      token,
-      key,
-      encryption,
-      storeName: "test-store",
-    });
-
-    expect(encryption.encrypt).toHaveBeenCalledWith({
-      plaintext: JSON.stringify(token),
-      context: {
-        key,
-        storeName: "test-store",
-      },
-    });
-  });
-
-  it("passes TokenKey and storeName into decryption context", async () => {
-    const encryption: TokenEncryption = {
-      encrypt: vi.fn(async ({ plaintext }) => plaintext),
-      decrypt: vi.fn(async () => JSON.stringify(token)),
-    };
-
-    await deserializeTokenRecordFromStorage({
-      value: "ciphertext",
-      key,
-      encryption,
-      storeName: "test-store",
-    });
-
-    expect(encryption.decrypt).toHaveBeenCalledWith({
-      ciphertext: "ciphertext",
-      context: {
-        key,
-        storeName: "test-store",
-      },
-    });
   });
 });

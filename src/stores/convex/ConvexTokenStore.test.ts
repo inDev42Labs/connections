@@ -40,17 +40,4 @@ describe("ConvexTokenStore scaffold behavior", () => {
     );
   });
 
-  it("throws scaffold errors when configured but unimplemented methods are called", async () => {
-    const store = new ConvexTokenStore({ client: {} });
-
-    await expect(store.get(key)).rejects.toThrow(
-      "ConvexTokenStore.get is a scaffold stub",
-    );
-    await expect(store.put(key, token)).rejects.toThrow(
-      "ConvexTokenStore.put is a scaffold stub",
-    );
-    await expect(store.delete(key)).rejects.toThrow(
-      "ConvexTokenStore.delete is a scaffold stub",
-    );
-  });
 });

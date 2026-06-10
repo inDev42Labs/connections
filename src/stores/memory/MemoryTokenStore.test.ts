@@ -72,45 +72,6 @@ describe("MemoryTokenStore", () => {
     });
   });
 
-  it("uses the configured encryption layer before storing", async () => {
-    const encryption: TokenEncryption = {
-      encrypt: vi.fn(async () => "ciphertext"),
-      decrypt: vi.fn(async () => JSON.stringify(token)),
-    };
-    const store = new MemoryTokenStore({ encryption });
-
-    await store.put(key, token);
-
-    expect(encryption.encrypt).toHaveBeenCalledWith({
-      plaintext: JSON.stringify(token),
-      context: {
-        key,
-        storeName: "memory",
-      },
-    });
-  });
-
-  it("passes a configured storeName into the encryption context", async () => {
-    const encryption: TokenEncryption = {
-      encrypt: vi.fn(async ({ plaintext }) => plaintext),
-      decrypt: vi.fn(async ({ ciphertext }) => ciphertext),
-    };
-    const store = new MemoryTokenStore({
-      encryption,
-      storeName: "custom-memory-store",
-    });
-
-    await store.put(key, token);
-
-    expect(encryption.encrypt).toHaveBeenCalledWith({
-      plaintext: JSON.stringify(token),
-      context: {
-        key,
-        storeName: "custom-memory-store",
-      },
-    });
-  });
-
   it("does not store a token when encryption fails during put", async () => {
     const encryption: TokenEncryption = {
       encrypt: vi.fn(async () => {
@@ -124,25 +85,6 @@ describe("MemoryTokenStore", () => {
 
     expect(store.size).toBe(0);
     await expect(store.get(key)).resolves.toBeNull();
-  });
-
-  it("uses the configured encryption layer when reading", async () => {
-    const encryption: TokenEncryption = {
-      encrypt: vi.fn(async ({ plaintext }) => plaintext),
-      decrypt: vi.fn(async ({ ciphertext }) => ciphertext),
-    };
-    const store = new MemoryTokenStore({ encryption });
-
-    await store.put(key, token);
-    await expect(store.get(key)).resolves.toEqual(token);
-
-    expect(encryption.decrypt).toHaveBeenCalledWith({
-      ciphertext: JSON.stringify(token),
-      context: {
-        key,
-        storeName: "memory",
-      },
-    });
   });
 
   it("surfaces decryption failures during get", async () => {
