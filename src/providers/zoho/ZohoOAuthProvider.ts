@@ -23,7 +23,6 @@ export class ZohoOAuthProvider implements OAuthProvider {
     const credentials = await resolveOAuthClientCredentials(this.options.credentials, {
       provider: this.provider,
       operation: "authorizationUrl",
-      key: input.key,
       metadata: input.metadata,
     });
     const url = new URL("/oauth/v2/auth", this.accountsUrl);
@@ -49,7 +48,6 @@ export class ZohoOAuthProvider implements OAuthProvider {
     await resolveOAuthClientCredentials(this.options.credentials, {
       provider: this.provider,
       operation: "exchangeCode",
-      key: input.key,
       metadata: input.metadata,
     });
 
