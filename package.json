@@ -12,7 +12,8 @@
     "./stores/neon": "./src/stores/neon/index.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "vitest": "^4.1.8"
   },
   "peerDependencies": {
     "typescript": "^5"
