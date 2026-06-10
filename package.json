@@ -3,6 +3,9 @@
   "module": "index.ts",
   "types": "index.ts",
   "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
   "exports": {
     ".": "./index.ts",
     "./core": "./src/core/index.ts",
