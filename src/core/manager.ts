@@ -1,12 +1,19 @@
-import { MissingRefreshTokenError, OAuthProviderNotRegisteredError, TokenNotFoundError } from "./errors";
-import type { AuthorizationUrlInput, OAuthProvider } from "./provider";
+import {
+  MissingRefreshTokenError,
+  OAuthProviderNotRegisteredError,
+  TokenNotFoundError,
+} from "./errors";
+import type {
+  AuthorizationUrlInput,
+  ExchangeCodeInput,
+  OAuthProvider,
+} from "./provider";
 import { serializeTokenKey, type TokenStore } from "./store";
 import type { TokenKey, TokenRecord } from "./types";
 
 export type TokenManagerOptions = {
   store: TokenStore;
-  provider?: OAuthProvider;
-  providers?: OAuthProvider[] | Record<string, OAuthProvider>;
+  providers?: OAuthProvider[];
   refreshSkewMs?: number;
   now?: () => number;
 };
@@ -20,11 +27,8 @@ export type SaveInitialTokenInput = {
   token: TokenRecord;
 };
 
-export type ExchangeCodeAndSaveInput = {
+export type ExchangeCodeAndSaveInput = ExchangeCodeInput & {
   key: TokenKey;
-  code: string;
-  redirectUri: string;
-  metadata?: Record<string, unknown>;
 };
 
 export type GetAuthorizationUrlInput = AuthorizationUrlInput & {
@@ -43,18 +47,8 @@ export class TokenManager {
     this.refreshSkewMs = options.refreshSkewMs ?? 60_000;
     this.now = options.now ?? Date.now;
 
-    if (options.provider) {
-      this.use(options.provider);
-    }
-
-    if (Array.isArray(options.providers)) {
-      for (const provider of options.providers) {
-        this.use(provider);
-      }
-    } else if (options.providers) {
-      for (const provider of Object.values(options.providers)) {
-        this.use(provider);
-      }
+    for (const provider of options.providers ?? []) {
+      this.use(provider);
     }
   }
 
@@ -68,10 +62,11 @@ export class TokenManager {
     return provider.getAuthorizationUrl(input);
   }
 
-  async exchangeCodeAndSave(input: ExchangeCodeAndSaveInput): Promise<TokenRecord> {
+  async exchangeCodeAndSave(
+    input: ExchangeCodeAndSaveInput,
+  ): Promise<TokenRecord> {
     const provider = this.getProvider(input.key.provider);
     const token = await provider.exchangeCode({
-      key: input.key,
       code: input.code,
       redirectUri: input.redirectUri,
       metadata: input.metadata,
@@ -110,7 +105,10 @@ export class TokenManager {
     return this.refreshAndSave(key, token, options);
   }
 
-  async revoke(key: TokenKey, options: TokenManagerRequestOptions = {}): Promise<void> {
+  async revoke(
+    key: TokenKey,
+    options: TokenManagerRequestOptions = {},
+  ): Promise<void> {
     const token = await this.store.get(key);
     const provider = this.providers.get(key.provider);
 
@@ -125,12 +123,11 @@ export class TokenManager {
     await this.store.delete(key);
   }
 
-  async delete(key: TokenKey): Promise<void> {
-    await this.store.delete(key);
-  }
-
   private shouldRefresh(token: TokenRecord): boolean {
-    return token.expiresAt !== undefined && token.expiresAt <= this.now() + this.refreshSkewMs;
+    return (
+      token.expiresAt !== undefined &&
+      token.expiresAt <= this.now() + this.refreshSkewMs
+    );
   }
 
   private refreshAndSave(
@@ -145,9 +142,11 @@ export class TokenManager {
       return existingRefresh;
     }
 
-    const refresh = this.refreshAndPersist(key, currentToken, options).finally(() => {
-      this.refreshLocks.delete(lockKey);
-    });
+    const refresh = this.refreshAndPersist(key, currentToken, options).finally(
+      () => {
+        this.refreshLocks.delete(lockKey);
+      },
+    );
 
     this.refreshLocks.set(lockKey, refresh);
     return refresh;

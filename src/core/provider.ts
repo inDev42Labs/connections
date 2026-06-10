@@ -1,7 +1,6 @@
 import type { Awaitable, TokenKey, TokenRecord } from "./types";
 
 export type AuthorizationUrlInput = {
-  key?: TokenKey;
   redirectUri: string;
   scopes?: string[];
   state?: string;
@@ -9,7 +8,6 @@ export type AuthorizationUrlInput = {
 };
 
 export type ExchangeCodeInput = {
-  key?: TokenKey;
   code: string;
   redirectUri: string;
   metadata?: Record<string, unknown>;
