@@ -1,6 +1,14 @@
 import type { OAuthClientCredentials } from "../../core";
 
-export type ZohoDataCenter = "com" | "eu" | "in" | "com.au" | "jp" | "ca";
+export type ZohoDataCenter =
+  | "com"
+  | "com.au"
+  | "eu"
+  | "in"
+  | "com.cn"
+  | "jp"
+  | "sa"
+  | "ca";
 
 export type ZohoOAuthProviderOptions = {
   credentials: OAuthClientCredentials;

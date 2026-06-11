@@ -20,60 +20,141 @@ export class ZohoOAuthProvider implements OAuthProvider {
   }
 
   async getAuthorizationUrl(input: AuthorizationUrlInput): Promise<string> {
-    const credentials = await resolveOAuthClientCredentials(this.options.credentials, {
-      provider: this.provider,
-      operation: "authorizationUrl",
-      metadata: input.metadata,
-    });
+    const credentials = await resolveOAuthClientCredentials(
+      this.options.credentials,
+      {
+        provider: this.provider,
+        operation: "authorizationUrl",
+        metadata: input.metadata,
+      },
+    );
     const url = new URL("/oauth/v2/auth", this.accountsUrl);
 
     url.searchParams.set("client_id", credentials.clientId);
     url.searchParams.set("response_type", "code");
     url.searchParams.set("redirect_uri", input.redirectUri);
-    url.searchParams.set("scope", (input.scopes ?? this.options.defaultScopes ?? []).join(","));
+    url.searchParams.set(
+      "scope",
+      (input.scopes ?? this.options.defaultScopes ?? []).join(","),
+    );
     url.searchParams.set("access_type", this.options.accessType ?? "offline");
-
-    if (input.state) {
-      url.searchParams.set("state", input.state);
-    }
-
-    if (this.options.prompt) {
-      url.searchParams.set("prompt", this.options.prompt);
-    }
 
     return url.toString();
   }
 
   async exchangeCode(input: ExchangeCodeInput): Promise<TokenRecord> {
-    await resolveOAuthClientCredentials(this.options.credentials, {
-      provider: this.provider,
-      operation: "exchangeCode",
-      metadata: input.metadata,
+    const credentials = await resolveOAuthClientCredentials(
+      this.options.credentials,
+      {
+        provider: this.provider,
+        operation: "exchangeCode",
+        metadata: input.metadata,
+      },
+    );
+    if (!credentials.clientSecret) {
+      throw new OAuthProviderError(
+        "Client secret must be provided to the Zoho provider to exchange an authorization code",
+      );
+    }
+
+    const url = new URL("/oauth/v2/auth", this.accountsUrl);
+    const formData = new FormData();
+    formData.append("grant_type", "authorization_code");
+    formData.append("client_id", credentials.clientId);
+    formData.append("client_secret", credentials.clientSecret);
+    formData.append("code", input.code);
+    if (input.redirectUri) {
+      formData.append("redirect_uri", input.redirectUri);
+    }
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formData,
     });
 
-    throw new OAuthProviderError("ZohoOAuthProvider.exchangeCode is a scaffold stub");
+    if (!res.ok) {
+      throw new OAuthProviderError(
+        `Response from Zoho authorization url came back with status ${res.status}`,
+      );
+    }
+
+    let data: any;
+    try {
+      data = await res.json();
+    } catch (_) {
+      throw new Error(
+        `Unabled to parse json response from Zoho authorization url`,
+      );
+    }
+
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      tokenType: data.token_type,
+      expiresAt: new Date().getTime() + data.expires_in,
+    };
   }
 
   async refreshToken(input: RefreshTokenInput): Promise<TokenRecord> {
-    await resolveOAuthClientCredentials(this.options.credentials, {
-      provider: this.provider,
-      operation: "refreshToken",
-      key: input.key,
-      metadata: input.metadata,
+    const credentials = await resolveOAuthClientCredentials(
+      this.options.credentials,
+      {
+        provider: this.provider,
+        operation: "refreshToken",
+        metadata: input.metadata,
+      },
+    );
+    if (!credentials.clientSecret) {
+      throw new OAuthProviderError(
+        "Client secret must be provided to the Zoho provider to refresh tokens",
+      );
+    }
+
+    const url = new URL("/oauth/v2/auth", this.accountsUrl);
+    url.searchParams.set("refresh_token", input.refreshToken);
+    url.searchParams.set("client_id", credentials.clientId);
+    url.searchParams.set("client_secret", credentials.clientSecret);
+    url.searchParams.set("grant_type", "refresh_token");
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
 
-    throw new OAuthProviderError("ZohoOAuthProvider.refreshToken is a scaffold stub");
+    if (!res.ok) {
+      throw new OAuthProviderError(
+        `Response from Zoho authorization url came back with status ${res.status}`,
+      );
+    }
+
+    let data: any;
+    try {
+      data = await res.json();
+    } catch (_) {
+      throw new OAuthProviderError(
+        `Unabled to parse json response from Zoho authorization url`,
+      );
+    }
+
+    return {
+      accessToken: data.access_token,
+      tokenType: data.token_type,
+      expiresAt: new Date().getTime() + data.expires_in,
+    };
   }
 
   async revokeToken(input: RevokeTokenInput): Promise<void> {
-    await resolveOAuthClientCredentials(this.options.credentials, {
-      provider: this.provider,
-      operation: "revokeToken",
-      key: input.key,
-      metadata: input.metadata,
+    const url = new URL("/oauth/v2/auth", this.accountsUrl);
+    if (!input.token.refreshToken) {
+      throw new OAuthProviderError(
+        `A refresh token is required to revoke the token`,
+      );
+    }
+    url.searchParams.set("token", input.token.refreshToken);
+    await fetch(url, {
+      method: "POST",
     });
-
-    throw new OAuthProviderError("ZohoOAuthProvider.revokeToken is a scaffold stub");
   }
 
   private get accountsUrl(): string {
