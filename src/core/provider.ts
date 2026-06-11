@@ -1,4 +1,4 @@
-import type { Awaitable, TokenKey, TokenRecord } from "./types";
+import type { Awaitable, TokenRecord } from "./types";
 
 export type AuthorizationUrlInput = {
   redirectUri: string;
@@ -9,19 +9,17 @@ export type AuthorizationUrlInput = {
 
 export type ExchangeCodeInput = {
   code: string;
-  redirectUri: string;
+  redirectUri?: string;
   metadata?: Record<string, unknown>;
 };
 
 export type RefreshTokenInput = {
-  key: TokenKey;
   refreshToken: string;
   currentToken?: TokenRecord;
   metadata?: Record<string, unknown>;
 };
 
 export type RevokeTokenInput = {
-  key: TokenKey;
   token: TokenRecord;
   metadata?: Record<string, unknown>;
 };
