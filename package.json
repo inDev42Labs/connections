@@ -1,25 +1,67 @@
 {
   "name": "@indev42/connections",
-  "module": "index.ts",
-  "types": "index.ts",
+  "version": "0.1.0",
+  "description": "OAuth token management for app integrations.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inDev42Labs/connections.git"
+  },
   "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "test": "vitest run"
+    "build": "tsup",
+    "changeset": "changeset",
+    "prepack": "bun run build",
+    "release": "changeset publish",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "exports": {
-    ".": "./index.ts",
-    "./core": "./src/core/index.ts",
-    "./providers/salesforce": "./src/providers/salesforce/index.ts",
-    "./providers/zoho": "./src/providers/zoho/index.ts",
-    "./stores/convex": "./src/stores/convex/index.ts",
-    "./stores/memory": "./src/stores/memory/index.ts",
-    "./stores/neon": "./src/stores/neon/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./providers/salesforce": {
+      "types": "./dist/providers/salesforce/index.d.ts",
+      "import": "./dist/providers/salesforce/index.js"
+    },
+    "./providers/zoho": {
+      "types": "./dist/providers/zoho/index.d.ts",
+      "import": "./dist/providers/zoho/index.js"
+    },
+    "./stores/convex": {
+      "types": "./dist/stores/convex/index.d.ts",
+      "import": "./dist/stores/convex/index.js"
+    },
+    "./stores/memory": {
+      "types": "./dist/stores/memory/index.d.ts",
+      "import": "./dist/stores/memory/index.js"
+    },
+    "./stores/neon": {
+      "types": "./dist/stores/neon/index.d.ts",
+      "import": "./dist/stores/neon/index.js"
+    }
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "@types/bun": "latest",
+    "tsup": "^8.5.1",
+    "typescript": "^5",
     "vitest": "^4.1.8"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
   }
 }
