@@ -38,6 +38,12 @@ export class ZohoOAuthProvider implements OAuthProvider {
       (input.scopes ?? this.options.defaultScopes ?? []).join(","),
     );
     url.searchParams.set("access_type", this.options.accessType ?? "offline");
+    if (input.state) {
+      url.searchParams.set("state", input.state);
+    }
+    if (this.options.prompt) {
+      url.searchParams.set("prompt", this.options.prompt);
+    }
 
     return url.toString();
   }
@@ -57,14 +63,14 @@ export class ZohoOAuthProvider implements OAuthProvider {
       );
     }
 
-    const url = new URL("/oauth/v2/auth", this.accountsUrl);
-    const formData = new FormData();
-    formData.append("grant_type", "authorization_code");
-    formData.append("client_id", credentials.clientId);
-    formData.append("client_secret", credentials.clientSecret);
-    formData.append("code", input.code);
+    const url = new URL("/oauth/v2/token", this.accountsUrl);
+    const formData = new URLSearchParams();
+    formData.set("grant_type", "authorization_code");
+    formData.set("client_id", credentials.clientId);
+    formData.set("client_secret", credentials.clientSecret);
+    formData.set("code", input.code);
     if (input.redirectUri) {
-      formData.append("redirect_uri", input.redirectUri);
+      formData.set("redirect_uri", input.redirectUri);
     }
 
     const res = await fetch(url, {
@@ -92,7 +98,7 @@ export class ZohoOAuthProvider implements OAuthProvider {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
       tokenType: data.token_type,
-      expiresAt: new Date().getTime() + data.expires_in,
+      expiresAt: Date.now() + data.expires_in * 1000,
     };
   }
 
@@ -111,15 +117,17 @@ export class ZohoOAuthProvider implements OAuthProvider {
       );
     }
 
-    const url = new URL("/oauth/v2/auth", this.accountsUrl);
-    url.searchParams.set("refresh_token", input.refreshToken);
-    url.searchParams.set("client_id", credentials.clientId);
-    url.searchParams.set("client_secret", credentials.clientSecret);
-    url.searchParams.set("grant_type", "refresh_token");
+    const url = new URL("/oauth/v2/token", this.accountsUrl);
+    const formData = new URLSearchParams();
+    formData.set("refresh_token", input.refreshToken);
+    formData.set("client_id", credentials.clientId);
+    formData.set("client_secret", credentials.clientSecret);
+    formData.set("grant_type", "refresh_token");
 
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formData,
     });
 
     if (!res.ok) {
@@ -140,26 +148,32 @@ export class ZohoOAuthProvider implements OAuthProvider {
     return {
       accessToken: data.access_token,
       tokenType: data.token_type,
-      expiresAt: new Date().getTime() + data.expires_in,
+      expiresAt: Date.now() + data.expires_in * 1000,
     };
   }
 
   async revokeToken(input: RevokeTokenInput): Promise<void> {
-    const url = new URL("/oauth/v2/auth", this.accountsUrl);
-    if (!input.token.refreshToken) {
-      throw new OAuthProviderError(
-        `A refresh token is required to revoke the token`,
-      );
-    }
-    url.searchParams.set("token", input.token.refreshToken);
-    await fetch(url, {
+    const token = input.token.refreshToken ?? input.token.accessToken;
+    const url = new URL("/oauth/v2/token/revoke", this.accountsUrl);
+    url.searchParams.set("token", token);
+    const res = await fetch(url, {
       method: "POST",
     });
+
+    if (!res.ok) {
+      throw new OAuthProviderError(
+        `Response from Zoho revoke url came back with status ${res.status}`,
+      );
+    }
   }
 
   private get accountsUrl(): string {
     if (this.options.accountsUrl) {
       return this.options.accountsUrl;
+    }
+
+    if (this.options.dataCenter === "ca") {
+      return "https://accounts.zohocloud.ca";
     }
 
     return `https://accounts.zoho.${this.options.dataCenter ?? "com"}`;

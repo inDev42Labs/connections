@@ -114,7 +114,6 @@ export class TokenManager {
 
     if (token && provider?.revokeToken) {
       await provider.revokeToken({
-        key,
         token,
         metadata: options.metadata,
       });
@@ -163,7 +162,6 @@ export class TokenManager {
 
     const provider = this.getProvider(key.provider);
     const refreshedToken = await provider.refreshToken({
-      key,
       refreshToken: currentToken.refreshToken,
       currentToken,
       metadata: options.metadata,
