@@ -60,7 +60,6 @@ describe("TokenManager", () => {
     );
     await expect(store.get(key)).resolves.toEqual(refreshedToken);
     expect(provider.refreshToken).toHaveBeenCalledWith({
-      key,
       refreshToken: "stored-refresh-token",
       currentToken: {
         accessToken: "expired-access-token",
@@ -206,18 +205,18 @@ describe("TokenManager", () => {
     const store = createStore();
     await store.put(firstKey, {
       accessToken: "first-expired-token",
-      refreshToken: "first-refresh-token",
+      refreshToken: "account-1-refresh-token",
       expiresAt: 999,
     });
     await store.put(secondKey, {
       accessToken: "second-expired-token",
-      refreshToken: "second-refresh-token",
+      refreshToken: "account-2-refresh-token",
       expiresAt: 999,
     });
     const provider = createProvider({
       refreshImplementation: async (input) => ({
-        accessToken: `${input.key.accountId}-new-access-token`,
-        refreshToken: `${input.key.accountId}-new-refresh-token`,
+        accessToken: `${input.refreshToken.replace("-refresh-token", "")}-new-access-token`,
+        refreshToken: `${input.refreshToken.replace("-refresh-token", "")}-new-refresh-token`,
         expiresAt: 2_000,
       }),
     });
@@ -258,7 +257,6 @@ describe("TokenManager", () => {
 
     expect(events).toEqual(["revoke", "delete"]);
     expect(provider.revokeToken).toHaveBeenCalledWith({
-      key,
       token,
       metadata: { reason: "test" },
     });
@@ -600,18 +598,18 @@ describe("TokenManager refresh edge cases", () => {
     const store = createStore();
     await store.put(firstKey, {
       accessToken: "first-expired-token",
-      refreshToken: "first-refresh-token",
+      refreshToken: "connection-1-refresh-token",
       expiresAt: 999,
     });
     await store.put(secondKey, {
       accessToken: "second-expired-token",
-      refreshToken: "second-refresh-token",
+      refreshToken: "connection-2-refresh-token",
       expiresAt: 999,
     });
     const provider = createProvider({
       refreshImplementation: async (input) => ({
-        accessToken: `${input.key.connectionId}-new-access-token`,
-        refreshToken: `${input.key.connectionId}-new-refresh-token`,
+        accessToken: `${input.refreshToken.replace("-refresh-token", "")}-new-access-token`,
+        refreshToken: `${input.refreshToken.replace("-refresh-token", "")}-new-refresh-token`,
         expiresAt: 2_000,
       }),
     });
@@ -742,7 +740,6 @@ describe("TokenManager integration with MemoryTokenStore", () => {
     await manager.revoke(key);
 
     expect(provider.revokeToken).toHaveBeenCalledWith({
-      key,
       token,
       metadata: undefined,
     });
