@@ -9,6 +9,7 @@
   "exports": {
     ".": "./index.ts",
     "./core": "./src/core/index.ts",
+    "./providers/salesforce": "./src/providers/salesforce/index.ts",
     "./providers/zoho": "./src/providers/zoho/index.ts",
     "./stores/convex": "./src/stores/convex/index.ts",
     "./stores/memory": "./src/stores/memory/index.ts",

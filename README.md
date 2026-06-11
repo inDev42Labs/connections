@@ -178,6 +178,49 @@ const zohoProvider = new ZohoOAuthProvider({
 });
 ```
 
+## Salesforce Provider
+
+```ts
+import { SalesforceOAuthProvider } from "@indev42/connections/providers/salesforce";
+
+const salesforceProvider = new SalesforceOAuthProvider({
+  credentials: {
+    clientId: process.env.SALESFORCE_CLIENT_ID!,
+    clientSecret: process.env.SALESFORCE_CLIENT_SECRET!,
+  },
+  environment: "production",
+  defaultScopes: ["api", "refresh_token"],
+});
+```
+
+Options:
+
+- `credentials`: required OAuth client credentials. Provide a static object or a resolver function.
+- `loginUrl`: optional full Salesforce login or My Domain URL, such as `"https://acme.my.salesforce.com"`. When set, it overrides `environment`.
+- `environment`: `"production"` or `"sandbox"`. Defaults to `"production"`, using `https://login.salesforce.com`. Sandbox uses `https://test.salesforce.com`.
+- `defaultScopes`: scopes used when `getAuthorizationUrl` is called without `scopes`. Salesforce scopes are sent as a space-delimited list.
+- `display`: optional Salesforce authorization display value.
+- `prompt`: optional Salesforce prompt value.
+
+Salesforce token responses include org-specific metadata such as `instance_url`, `id`, `issued_at`, and `signature`. The provider stores those values on `token.metadata` using camel-cased keys:
+
+```ts
+const token = await manager.getValidToken({
+  provider: "salesforce",
+  accountId: "user-or-tenant-id",
+});
+
+const instanceUrl = token.metadata?.instanceUrl as string;
+
+await fetch(`${instanceUrl}/services/data/v61.0/sobjects/Account`, {
+  headers: {
+    Authorization: `Bearer ${token.accessToken}`,
+  },
+});
+```
+
+Salesforce does not normally include `expires_in` in web server flow token responses. When no expiry is returned, the saved token does not include `expiresAt` and is treated as valid until revoked or replaced.
+
 ## Stores
 
 ### MemoryTokenStore
