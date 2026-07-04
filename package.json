@@ -1,6 +1,6 @@
 {
   "name": "@indev42/connections",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OAuth token management for app integrations.",
   "license": "MIT",
   "repository": {
@@ -23,7 +23,7 @@
     "build": "tsup",
     "changeset": "changeset",
     "prepack": "bun run build",
-    "release": "changeset publish",
+    "release": "changeset publish --tag latest",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -35,6 +35,10 @@
     "./core": {
       "types": "./dist/core/index.d.ts",
       "import": "./dist/core/index.js"
+    },
+    "./providers/dummy": {
+      "types": "./dist/providers/dummy/index.d.ts",
+      "import": "./dist/providers/dummy/index.js"
     },
     "./providers/salesforce": {
       "types": "./dist/providers/salesforce/index.d.ts",
