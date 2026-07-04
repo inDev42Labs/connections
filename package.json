@@ -23,7 +23,7 @@
     "build": "tsup",
     "changeset": "changeset",
     "prepack": "bun run build",
-    "release": "changeset publish",
+    "release": "changeset publish --tag latest",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
