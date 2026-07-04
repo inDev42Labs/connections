@@ -18,11 +18,17 @@ export interface TokenEncryption {
 }
 
 export class PlaintextTokenEncryption implements TokenEncryption {
-  async encrypt(input: { plaintext: string }): Promise<string> {
+  async encrypt(input: {
+    plaintext: string;
+    context: TokenEncryptionContext;
+  }): Promise<string> {
     return input.plaintext;
   }
 
-  async decrypt(input: { ciphertext: string }): Promise<string> {
+  async decrypt(input: {
+    ciphertext: string;
+    context: TokenEncryptionContext;
+  }): Promise<string> {
     return input.ciphertext;
   }
 }
