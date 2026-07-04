@@ -1,2 +1,10 @@
 export { ConvexTokenStore } from "./ConvexTokenStore";
-export type { ConvexTokenStoreFunctions, ConvexTokenStoreOptions } from "./convex.types";
+export type {
+  ConvexClient,
+  ConvexTokenDeleteArgs,
+  ConvexTokenGetArgs,
+  ConvexTokenGetResult,
+  ConvexTokenPutArgs,
+  ConvexTokenStoreFunctions,
+  ConvexTokenStoreOptions,
+} from "./convex.types";
