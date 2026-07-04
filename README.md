@@ -136,141 +136,49 @@ Common methods:
 - `getValidAccessToken(key, { metadata })`
 - `revoke(key, { metadata })`
 
-## Zoho Provider
+## Providers
+
+Providers implement OAuth service-specific behavior: authorization URLs, code exchange, token refresh, and optional token revocation.
+
+| Provider | Import | Purpose |
+| --- | --- | --- |
+| Dummy | `@indev42/connections/providers/dummy` | Network-free provider for examples, demos, tests, and local sampling. |
+| Salesforce | `@indev42/connections/providers/salesforce` | Salesforce OAuth provider with production, sandbox, and custom login URL support. |
+| Zoho | `@indev42/connections/providers/zoho` | Zoho OAuth provider with data center and accounts URL support. |
+
+Built-in providers are also exported from the root package entrypoint:
 
 ```ts
-import { ZohoOAuthProvider } from "@indev42/connections/providers/zoho";
-
-const zohoProvider = new ZohoOAuthProvider({
-  credentials: {
-    clientId: process.env.ZOHO_CLIENT_ID!,
-    clientSecret: process.env.ZOHO_CLIENT_SECRET!,
-  },
-  dataCenter: "com",
-  defaultScopes: ["ZohoCRM.modules.READ"],
-  accessType: "offline",
-  prompt: "consent",
-});
+import {
+  DummyOAuthProvider,
+  SalesforceOAuthProvider,
+  ZohoOAuthProvider,
+} from "@indev42/connections";
 ```
 
-Options:
-
-- `credentials`: required OAuth client credentials. Provide a static object or a resolver function.
-- `accountsUrl`: optional full Zoho accounts URL override.
-- `dataCenter`: optional Zoho data center. Supported values are `"com"`, `"com.au"`, `"eu"`, `"in"`, `"com.cn"`, `"jp"`, `"sa"`, and `"ca"`.
-- `defaultScopes`: scopes used when `getAuthorizationUrl` is called without `scopes`.
-- `accessType`: `"offline"` or `"online"`. Defaults to `"offline"`.
-- `prompt`: optional Zoho prompt value, commonly `"consent"`.
-
-Dynamic credentials are useful when client credentials vary by tenant or environment:
-
-```ts
-const zohoProvider = new ZohoOAuthProvider({
-  credentials: async ({ provider, operation, metadata }) => {
-    const tenantId = metadata?.tenantId as string;
-    const credentials = await loadCredentialsForTenant(tenantId, provider);
-
-    return {
-      clientId: credentials.clientId,
-      clientSecret: operation === "authorizationUrl" ? undefined : credentials.clientSecret,
-    };
-  },
-});
-```
-
-## Salesforce Provider
-
-```ts
-import { SalesforceOAuthProvider } from "@indev42/connections/providers/salesforce";
-
-const salesforceProvider = new SalesforceOAuthProvider({
-  credentials: {
-    clientId: process.env.SALESFORCE_CLIENT_ID!,
-    clientSecret: process.env.SALESFORCE_CLIENT_SECRET!,
-  },
-  environment: "production",
-  defaultScopes: ["api", "refresh_token"],
-});
-```
-
-Options:
-
-- `credentials`: required OAuth client credentials. Provide a static object or a resolver function.
-- `loginUrl`: optional full Salesforce login or My Domain URL, such as `"https://acme.my.salesforce.com"`. When set, it overrides `environment`.
-- `environment`: `"production"` or `"sandbox"`. Defaults to `"production"`, using `https://login.salesforce.com`. Sandbox uses `https://test.salesforce.com`.
-- `defaultScopes`: scopes used when `getAuthorizationUrl` is called without `scopes`. Salesforce scopes are sent as a space-delimited list.
-- `display`: optional Salesforce authorization display value.
-- `prompt`: optional Salesforce prompt value.
-
-Salesforce token responses include org-specific metadata such as `instance_url`, `id`, `issued_at`, and `signature`. The provider stores those values on `token.metadata` using camel-cased keys:
-
-```ts
-const token = await manager.getValidToken({
-  provider: "salesforce",
-  accountId: "user-or-tenant-id",
-});
-
-const instanceUrl = token.metadata?.instanceUrl as string;
-
-await fetch(`${instanceUrl}/services/data/v61.0/sobjects/Account`, {
-  headers: {
-    Authorization: `Bearer ${token.accessToken}`,
-  },
-});
-```
-
-Salesforce does not normally include `expires_in` in web server flow token responses. When no expiry is returned, the saved token does not include `expiresAt` and is treated as valid until revoked or replaced.
+More detailed provider usage can live in colocated provider README files under `src/providers/<provider>/README.md`.
 
 ## Stores
 
-### MemoryTokenStore
+Stores implement token persistence. All built-in stores use the shared token serialization and optional `TokenEncryption` flow.
 
-`MemoryTokenStore` is useful for tests, local development, and short-lived processes. It does not persist across process restarts.
+| Store | Import | Purpose |
+| --- | --- | --- |
+| Memory | `@indev42/connections/stores/memory` | In-memory token storage for tests, local development, and short-lived processes. |
+| Neon | `@indev42/connections/stores/neon` | Postgres-compatible token storage using a Neon-style or pg-style SQL client. |
+| Convex | `@indev42/connections/stores/convex` | Convex-backed token storage using app-provided Convex query and mutation function references. |
 
-```ts
-import { MemoryTokenStore } from "@indev42/connections/stores/memory";
-
-const store = new MemoryTokenStore();
-```
-
-Options:
-
-- `encryption`: optional `TokenEncryption` implementation.
-- `storeName`: optional name passed to encryption context. Defaults to `"memory"`.
-
-### NeonTokenStore
-
-`NeonTokenStore` persists serialized token payloads in Postgres-compatible storage.
+Built-in stores are also exported from the root package entrypoint:
 
 ```ts
-import { NeonTokenStore } from "@indev42/connections/stores/neon";
-
-const store = new NeonTokenStore({
-  sql: postgresClient,
-  schemaName: "integrations",
-  tableName: "oauth_tokens",
-  ensureSchema: true,
-});
+import {
+  ConvexTokenStore,
+  MemoryTokenStore,
+  NeonTokenStore,
+} from "@indev42/connections";
 ```
 
-The `sql` client must expose this shape:
-
-```ts
-type NeonSqlClient = {
-  query<Row extends object = Record<string, unknown>>(
-    query: string,
-    params?: unknown[],
-  ): Promise<Row[] | { rows: Row[] }>;
-};
-```
-
-Options:
-
-- `sql`: required SQL client.
-- `schemaName`: optional schema name.
-- `tableName`: table name. Defaults to `"oauth_tokens"`.
-- `encryption`: optional `TokenEncryption` implementation.
-- `ensureSchema`: set to `false` if you manage schema creation yourself. Defaults to creating the schema/table on first use.
+Store-specific setup details can live in colocated store README files under `src/stores/<store>/README.md`. The Convex store includes `src/stores/convex/README.md` because it requires app-owned Convex schema and functions.
 
 ## Token Encryption
 
