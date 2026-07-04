@@ -184,6 +184,36 @@ Store-specific setup details can live in colocated store README files under `src
 
 Stores serialize tokens through a `TokenEncryption` implementation. If none is provided, tokens are stored as plaintext JSON.
 
+Built-in encryptors:
+
+| Encryptor | Import | Purpose |
+| --- | --- | --- |
+| AES-GCM | `@indev42/connections/encryptors/aes-gcm` | Web Crypto AES-GCM encryption for production token storage. |
+
+Built-in encryptors are also exported from the root package entrypoint:
+
+```ts
+import { AesGcmTokenEncryption } from "@indev42/connections";
+```
+
+Use `AesGcmTokenEncryption` with any store that accepts `encryption`:
+
+```ts
+import { AesGcmTokenEncryption, MemoryTokenStore } from "@indev42/connections";
+
+const encryption = new AesGcmTokenEncryption({
+  key: process.env.TOKEN_ENCRYPTION_KEY!,
+});
+
+const store = new MemoryTokenStore({ encryption });
+```
+
+The AES-GCM key must be 16, 24, or 32 bytes. String keys default to base64url encoding. Use 32 random bytes for AES-256 in production.
+
+More detailed setup notes live in `src/encryptors/aes-gcm/README.md`.
+
+You can also provide a custom encryptor:
+
 ```ts
 import { MemoryTokenStore, type TokenEncryption } from "@indev42/connections";
 

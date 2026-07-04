@@ -36,6 +36,14 @@
       "types": "./dist/core/index.d.ts",
       "import": "./dist/core/index.js"
     },
+    "./encryptors": {
+      "types": "./dist/encryptors/index.d.ts",
+      "import": "./dist/encryptors/index.js"
+    },
+    "./encryptors/aes-gcm": {
+      "types": "./dist/encryptors/aes-gcm/index.d.ts",
+      "import": "./dist/encryptors/aes-gcm/index.js"
+    },
     "./providers/dummy": {
       "types": "./dist/providers/dummy/index.d.ts",
       "import": "./dist/providers/dummy/index.js"
