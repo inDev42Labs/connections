@@ -18,7 +18,7 @@ const tokenStore = new ConvexTokenStore({
   functions: {
     get: api.oauthTokens.get,
     put: api.oauthTokens.put,
-    delete: api.oauthTokens.delete,
+    delete: api.oauthTokens.remove,
   },
 });
 ```
@@ -103,7 +103,7 @@ export const put = mutation({
   },
 });
 
-export const delete = mutation({
+export const remove = mutation({
   args: tokenKeyArgs,
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -151,7 +151,7 @@ const tokenStore = new ConvexTokenStore({
   functions: {
     get: api.oauthTokens.get,
     put: api.oauthTokens.put,
-    delete: api.oauthTokens.delete,
+    delete: api.oauthTokens.remove,
   },
   encryption,
 });
