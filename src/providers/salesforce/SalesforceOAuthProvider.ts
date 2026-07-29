@@ -11,6 +11,8 @@ import {
 import type { SalesforceOAuthProviderOptions } from "./salesforce.types";
 
 type SalesforceTokenResponse = {
+  error?: unknown;
+  error_description?: unknown;
   access_token?: unknown;
   refresh_token?: unknown;
   token_type?: unknown;
@@ -139,34 +141,72 @@ export class SalesforceOAuthProvider implements OAuthProvider {
   private async requestToken(
     formData: URLSearchParams,
   ): Promise<SalesforceTokenResponse> {
-    const res = await fetch(new URL("/services/oauth2/token", this.loginUrl), {
+    const url = new URL("/services/oauth2/token", this.loginUrl);
+    // https://help.salesforce.com/s/articleView?id=xcloud.remoteaccess_oauth_web_server_flow.htm
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: formData,
     });
 
-    if (!res.ok) {
-      throw new OAuthProviderError(
-        `Response from Salesforce token endpoint came back with status ${res.status}`,
-      );
-    }
-
     let data: unknown;
     try {
       data = await res.json();
-    } catch (_) {
+    } catch (cause) {
       throw new OAuthProviderError(
-        "Unable to parse json response from Salesforce token endpoint",
+        `Salesforce token endpoint returned invalid JSON (status ${res.status})`,
+        {
+          cause,
+          status: res.status,
+          details: { endpointHost: url.host, responseWasJson: false },
+        },
       );
     }
 
     if (!data || typeof data !== "object") {
       throw new OAuthProviderError(
-        "Salesforce token response did not include a JSON object",
+        `Salesforce token response must be a JSON object (status ${res.status})`,
+        {
+          status: res.status,
+          details: { endpointHost: url.host, responseWasJson: true },
+        },
       );
     }
 
-    return data as SalesforceTokenResponse;
+    const response = data as SalesforceTokenResponse;
+    const oauthError = strictOptionalString(response, "error", res.status);
+    const description = strictOptionalString(
+      response,
+      "error_description",
+      res.status,
+    );
+    if (oauthError) {
+      const safeDescription = sanitizeDescription(description);
+      throw new OAuthProviderError(
+        `Salesforce token request failed with OAuth error '${oauthError}'${safeDescription ? `: ${safeDescription}` : ""} (status ${res.status})`,
+        {
+          status: res.status,
+          oauthErrorCode: oauthError,
+          details: {
+            endpointHost: url.host,
+            responseWasJson: true,
+            ...(safeDescription ? { description: safeDescription } : {}),
+          },
+        },
+      );
+    }
+    if (!res.ok) {
+      throw new OAuthProviderError(
+        `Salesforce token endpoint returned status ${res.status}`,
+        {
+          status: res.status,
+          details: { endpointHost: url.host, responseWasJson: true },
+        },
+      );
+    }
+
+    validateOptionalResponseFields(response, res.status);
+    return response;
   }
 
   private tokenFromResponse(
@@ -174,7 +214,7 @@ export class SalesforceOAuthProvider implements OAuthProvider {
     currentMetadata?: Record<string, unknown>,
   ): TokenRecord {
     const accessToken = getString(data, "access_token");
-    if (!accessToken) {
+    if (!accessToken || accessToken.trim() === "") {
       throw new OAuthProviderError(
         "Salesforce token response did not include access_token",
       );
@@ -197,7 +237,11 @@ export class SalesforceOAuthProvider implements OAuthProvider {
       token.scopes = scope.split(/\s+/).filter(Boolean);
     }
     if (expiresIn !== undefined) {
-      token.expiresAt = Date.now() + expiresIn * 1000;
+      const expiresAt = Date.now() + expiresIn * 1000;
+      if (!Number.isFinite(expiresAt)) {
+        throw invalidResponseField("expires_in", undefined, "is too large");
+      }
+      token.expiresAt = expiresAt;
     }
     if (Object.keys(metadata).length > 0) {
       token.metadata = metadata;
@@ -249,13 +293,94 @@ function getNumber(
 ): number | undefined {
   const value = data[key];
   if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+    return value >= 0 ? value : undefined;
   }
   if (typeof value === "string") {
     const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
   }
   return undefined;
+}
+
+function strictOptionalString(
+  data: SalesforceTokenResponse,
+  key: keyof SalesforceTokenResponse,
+  status: number,
+): string | undefined {
+  const value = data[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw invalidResponseField(key, status, "must be a string");
+  }
+  return value;
+}
+
+function validateOptionalResponseFields(
+  data: SalesforceTokenResponse,
+  status: number,
+): void {
+  const stringFields: (keyof SalesforceTokenResponse)[] = [
+    "access_token",
+    "refresh_token",
+    "token_type",
+    "scope",
+    "instance_url",
+    "id",
+    "issued_at",
+    "signature",
+    "id_token",
+    "sfdc_community_url",
+    "sfdc_community_id",
+  ];
+  for (const field of stringFields) {
+    strictOptionalString(data, field, status);
+  }
+  if (
+    typeof data.access_token !== "string" ||
+    data.access_token.trim() === ""
+  ) {
+    throw invalidResponseField("access_token", status, "is missing");
+  }
+  if (
+    data.refresh_token !== undefined &&
+    (data.refresh_token as string).trim() === ""
+  ) {
+    throw invalidResponseField("refresh_token", status, "must be non-empty");
+  }
+  if (data.expires_in !== undefined) {
+    const expiresIn = getNumber(data, "expires_in");
+    if (expiresIn === undefined) {
+      throw invalidResponseField(
+        "expires_in",
+        status,
+        "must be a finite non-negative number",
+      );
+    }
+    if (!Number.isFinite(Date.now() + expiresIn * 1000)) {
+      throw invalidResponseField("expires_in", status, "is too large");
+    }
+  }
+}
+
+function invalidResponseField(
+  field: keyof SalesforceTokenResponse,
+  status: number | undefined,
+  reason: string,
+): OAuthProviderError {
+  return new OAuthProviderError(
+    `Salesforce token response is invalid: ${field} ${reason}`,
+    {
+      status,
+      details: { responseWasJson: true, invalidFields: [field] },
+    },
+  );
+}
+
+function sanitizeDescription(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value
+    .replace(/(access_token|refresh_token|code|client_secret)\s*[=:]\s*[^\s&,]+/gi, "$1=[REDACTED]")
+    .slice(0, 300);
 }
 
 function setStringMetadata(

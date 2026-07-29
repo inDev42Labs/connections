@@ -118,6 +118,86 @@ describe("ZohoOAuthProvider", () => {
     expect(body.get("client_secret")).toBe("client-secret");
   });
 
+  it.each([
+    ["an OAuth error", { error: "invalid_client" }, "invalid_client"],
+    ["a missing access token", {}, "access_token is missing"],
+    ["an empty access token", { access_token: "" }, "access_token is missing"],
+  ])("rejects a successful response containing %s", async (_case, body, message) => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(body)));
+    const provider = createProvider();
+
+    await expect(
+      provider.exchangeCode({ code: "authorization-code" }),
+    ).rejects.toThrow(message);
+  });
+
+  it("rejects OAuth error payloads from refresh even with a successful status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "invalid_client" })),
+    );
+
+    await expect(
+      createProvider().refreshToken({ refreshToken: "refresh-token" }),
+    ).rejects.toMatchObject({
+      name: "OAuthProviderError",
+      oauthErrorCode: "invalid_client",
+      status: 200,
+    });
+  });
+
+  it("throws a typed provider error for invalid JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("not-json", { status: 200 })),
+    );
+
+    await expect(
+      createProvider().exchangeCode({ code: "authorization-code" }),
+    ).rejects.toMatchObject({
+      name: "OAuthProviderError",
+      status: 200,
+      details: { responseWasJson: false },
+    });
+  });
+
+  it("includes sanitized status and OAuth error details for non-success responses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          {
+            error: "invalid_client",
+            error_description: "client_secret=super-secret was rejected",
+          },
+          { status: 401 },
+        ),
+      ),
+    );
+
+    const error = await createProvider()
+      .exchangeCode({ code: "authorization-code" })
+      .catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(OAuthProviderError);
+    expect(error).toMatchObject({ status: 401, oauthErrorCode: "invalid_client" });
+    expect(JSON.stringify(error)).not.toContain("super-secret");
+    expect(String(error)).not.toContain("super-secret");
+  });
+
+  it("rejects invalid expires_in instead of creating NaN", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ access_token: "access-token", expires_in: "invalid" }),
+      ),
+    );
+
+    await expect(
+      createProvider().exchangeCode({ code: "authorization-code" }),
+    ).rejects.toThrow("expires_in must be a finite non-negative number");
+  });
+
   it("revokes the available token at the revoke endpoint", async () => {
     const fetchMock = vi.fn(
       async (_url: URL | string, _init?: RequestInit) =>
@@ -154,3 +234,12 @@ describe("ZohoOAuthProvider", () => {
     ).rejects.toBeInstanceOf(OAuthProviderError);
   });
 });
+
+function createProvider(): ZohoOAuthProvider {
+  return new ZohoOAuthProvider({
+    credentials: {
+      clientId: "client-id",
+      clientSecret: "client-secret",
+    },
+  });
+}
