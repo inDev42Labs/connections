@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  InvalidTokenRecordError,
   MissingRefreshTokenError,
+  OAuthProviderError,
   OAuthProviderNotRegisteredError,
   TokenNotFoundError,
 } from "./errors";
@@ -385,6 +387,61 @@ describe("TokenManager public OAuth flow", () => {
     await expect(store.get(key)).resolves.toEqual(exchangedToken);
   });
 
+  it("does not persist an invalid exchange result", async () => {
+    const store = createStore();
+    const put = vi.spyOn(store, "put");
+    const provider = createProvider({ exchangedToken: {} as TokenRecord });
+    const manager = new TokenManager({ store, providers: [provider] });
+
+    await expect(
+      manager.exchangeCodeAndSave({ key, code: "authorization-code" }),
+    ).rejects.toThrow(
+      "Test exchangeCode returned an invalid token record: accessToken is missing",
+    );
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("emits secret-safe structured failures and swallows callback errors", async () => {
+    const events: unknown[] = [];
+    const provider = createProvider({
+      exchangeImplementation: async () => {
+        throw new OAuthProviderError("request failed", {
+          status: 401,
+          oauthErrorCode: "invalid_client",
+          details: {
+            endpointHost: "accounts.example.com",
+            responseWasJson: true,
+            description: "credentials rejected",
+          },
+        });
+      },
+    });
+    const manager = new TokenManager({
+      store: createStore(),
+      providers: [provider],
+      onEvent: (event) => {
+        events.push(event);
+        if (event.outcome === "started") throw new Error("logger failed");
+      },
+    });
+
+    await expect(
+      manager.exchangeCodeAndSave({
+        key,
+        code: "authorization-code-secret",
+      }),
+    ).rejects.toBeInstanceOf(OAuthProviderError);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        operation: "token.exchange",
+        outcome: "failed",
+        status: 401,
+        errorCode: "invalid_client",
+      }),
+    );
+    expect(JSON.stringify(events)).not.toContain("authorization-code-secret");
+  });
+
   it("passes code, redirectUri, and metadata into exchangeCode", async () => {
     const provider = createProvider();
     const manager = new TokenManager({
@@ -430,6 +487,17 @@ describe("TokenManager public OAuth flow", () => {
     await manager.saveInitialToken({ key, token });
 
     await expect(store.get(key)).resolves.toEqual(token);
+  });
+
+  it("validates tokens passed to saveInitialToken before persistence", async () => {
+    const store = createStore();
+    const put = vi.spyOn(store, "put");
+    const manager = new TokenManager({ store });
+
+    await expect(
+      manager.saveInitialToken({ key, token: {} as TokenRecord }),
+    ).rejects.toBeInstanceOf(InvalidTokenRecordError);
+    expect(put).not.toHaveBeenCalled();
   });
 
   it("allows providers to be registered after construction with use()", async () => {
@@ -528,6 +596,44 @@ describe("TokenManager refresh edge cases", () => {
 
     await expect(manager.getValidToken(key)).rejects.toThrow("refresh failed");
     await expect(store.get(key)).resolves.toEqual(initialToken);
+  });
+
+  it("does not persist or merge an invalid refresh result", async () => {
+    const initialToken: TokenRecord = {
+      accessToken: "expired-access-token",
+      refreshToken: "stored-refresh-token",
+      expiresAt: 999,
+    };
+    const store = createStore(initialToken);
+    const put = vi.spyOn(store, "put");
+    const provider = createProvider({
+      refreshedToken: { accessToken: undefined } as unknown as TokenRecord,
+    });
+    const manager = new TokenManager({
+      store,
+      providers: [provider],
+      now: () => 1_000,
+      refreshSkewMs: 0,
+    });
+
+    await expect(manager.getValidToken(key)).rejects.toThrow(
+      "Test refreshToken returned an invalid token record: accessToken is missing",
+    );
+    expect(put).not.toHaveBeenCalled();
+    await expect(store.get(key)).resolves.toEqual(initialToken);
+  });
+
+  it("rejects invalid records loaded from a store", async () => {
+    const store: TokenStore = {
+      get: async () => ({}) as TokenRecord,
+      put: vi.fn(),
+      delete: vi.fn(),
+    };
+    const manager = new TokenManager({ store });
+
+    await expect(manager.getValidAccessToken(key)).rejects.toBeInstanceOf(
+      InvalidTokenRecordError,
+    );
   });
 
   it("clears the refresh lock after refreshToken rejects so a later call can retry", async () => {

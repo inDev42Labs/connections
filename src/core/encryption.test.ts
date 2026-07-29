@@ -3,6 +3,7 @@ import {
   deserializeTokenRecordFromStorage,
   serializeTokenRecordForStorage,
 } from "./encryption";
+import { InvalidTokenRecordError } from "./errors";
 import type { TokenKey, TokenRecord } from "./types";
 
 const key: TokenKey = {
@@ -31,5 +32,20 @@ describe("token storage serialization", () => {
     await expect(
       deserializeTokenRecordFromStorage({ value, key }),
     ).resolves.toEqual(token);
+  });
+
+  it("rejects invalid records before serialization", async () => {
+    await expect(
+      serializeTokenRecordForStorage({
+        token: { accessToken: undefined } as unknown as TokenRecord,
+        key,
+      }),
+    ).rejects.toBeInstanceOf(InvalidTokenRecordError);
+  });
+
+  it("rejects invalid records after deserialization", async () => {
+    await expect(
+      deserializeTokenRecordFromStorage({ value: "{}", key }),
+    ).rejects.toThrow("Stored token record is invalid: accessToken is missing");
   });
 });

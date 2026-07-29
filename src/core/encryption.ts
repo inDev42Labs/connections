@@ -1,4 +1,6 @@
 import type { TokenKey, TokenRecord } from "./types";
+import { InvalidTokenRecordError } from "./errors";
+import { assertTokenRecord } from "./token-record";
 
 export type TokenEncryptionContext = {
   key: TokenKey;
@@ -42,6 +44,7 @@ export async function serializeTokenRecordForStorage(input: {
   storeName?: string;
 }): Promise<string> {
   const encryption = input.encryption ?? plaintextTokenEncryption;
+  assertTokenRecord(input.token, "Token record cannot be persisted");
 
   return encryption.encrypt({
     plaintext: JSON.stringify(input.token),
@@ -67,5 +70,16 @@ export async function deserializeTokenRecordFromStorage(input: {
     },
   });
 
-  return JSON.parse(plaintext) as TokenRecord;
+  let token: unknown;
+  try {
+    token = JSON.parse(plaintext);
+  } catch (cause) {
+    throw new InvalidTokenRecordError(
+      "Stored token record is invalid: expected valid JSON",
+      ["record"],
+      { cause },
+    );
+  }
+  assertTokenRecord(token, "Stored token record is invalid");
+  return token;
 }

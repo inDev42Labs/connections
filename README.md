@@ -110,6 +110,8 @@ type TokenRecord = {
 
 `expiresAt` is an epoch millisecond timestamp. Tokens without `expiresAt` are treated as valid until revoked or deleted.
 
+The package validates this shape at provider, manager, serialization, and storage boundaries. `accessToken` and any present `refreshToken` must be non-empty strings; malformed records throw `InvalidTokenRecordError` with code `INVALID_TOKEN_RECORD` before they can be persisted or returned.
+
 ## TokenManager Configuration
 
 ```ts
@@ -117,6 +119,7 @@ const manager = new TokenManager({
   store,
   providers: [zohoProvider],
   refreshSkewMs: 60_000,
+  onEvent: (event) => observability.record(event),
 });
 ```
 
@@ -126,6 +129,7 @@ Options:
 - `providers`: optional list of `OAuthProvider` implementations. You can also register providers later with `manager.use(provider)`.
 - `refreshSkewMs`: how early to refresh expiring tokens. Defaults to `60_000`.
 - `now`: optional clock override, mainly for tests.
+- `onEvent`: optional structured callback for exchange, refresh, load, and persistence outcomes. Events contain sanitized diagnostics and never token values, authorization codes, client secrets, encrypted records, or response bodies. Callback failures are ignored so observability cannot interrupt token handling.
 
 Common methods:
 
