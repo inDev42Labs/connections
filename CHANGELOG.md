@@ -1,5 +1,11 @@
 # @indev42/connections
 
+## 0.4.1
+
+### Patch Changes
+
+- 0ba92f7: Improved record validation and observability
+
 ## 0.4.0
 
 ### Minor Changes
