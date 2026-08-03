@@ -3,6 +3,7 @@ import {
   MissingRefreshTokenError,
   OAuthProviderError,
   OAuthProviderNotRegisteredError,
+  TokenExpiredError,
   TokenNotFoundError,
 } from "./errors";
 import type {
@@ -41,10 +42,13 @@ export type TokenManagerRequestOptions = {
   metadata?: Record<string, unknown>;
 };
 
-export type SaveInitialTokenInput = {
+export type SaveTokenInput = {
   key: TokenKey;
   token: TokenRecord;
 };
+
+/** @deprecated Use SaveTokenInput instead. */
+export type SaveInitialTokenInput = SaveTokenInput;
 
 export type ExchangeCodeAndSaveInput = ExchangeCodeInput & {
   key: TokenKey;
@@ -122,9 +126,14 @@ export class TokenManager {
     return token;
   }
 
-  async saveInitialToken(input: SaveInitialTokenInput): Promise<void> {
-    assertTokenRecord(input.token, "Initial token is invalid");
+  async saveToken(input: SaveTokenInput): Promise<void> {
+    assertTokenRecord(input.token, "Token is invalid");
     await this.persist(input.key, input.token);
+  }
+
+  /** @deprecated Use saveToken instead. */
+  async saveInitialToken(input: SaveInitialTokenInput): Promise<void> {
+    return this.saveToken(input);
   }
 
   async getValidAccessToken(
@@ -144,6 +153,13 @@ export class TokenManager {
 
     if (!token) {
       throw new TokenNotFoundError();
+    }
+
+    if (token.lifecycle === "static") {
+      if (token.expiresAt !== undefined && token.expiresAt <= this.now()) {
+        throw new TokenExpiredError(token.expiresAt);
+      }
+      return token;
     }
 
     if (!this.shouldRefresh(token)) {

@@ -16,6 +16,7 @@ const token: TokenRecord = {
   accessToken: "access-token",
   refreshToken: "refresh-token",
   expiresAt: 1_000,
+  lifecycle: "refreshable",
   scopes: ["scope:a"],
 };
 
@@ -47,5 +48,64 @@ describe("token storage serialization", () => {
     await expect(
       deserializeTokenRecordFromStorage({ value: "{}", key }),
     ).rejects.toThrow("Stored token record is invalid: accessToken is missing");
+  });
+
+  it("rejects unknown token lifecycles before serialization", async () => {
+    await expect(
+      serializeTokenRecordForStorage({
+        token: {
+          accessToken: "access-token",
+          lifecycle: "rotating",
+        } as unknown as TokenRecord,
+        key,
+      }),
+    ).rejects.toThrow(
+      "Token record cannot be persisted: lifecycle must be 'refreshable' or 'static' when present",
+    );
+  });
+
+  it("rejects refresh tokens on static token records", async () => {
+    await expect(
+      serializeTokenRecordForStorage({
+        token: {
+          accessToken: "access-token",
+          refreshToken: "refresh-token",
+          lifecycle: "static",
+        },
+        key,
+      }),
+    ).rejects.toThrow(
+      "Token record cannot be persisted: refreshToken must not be present when lifecycle is 'static'",
+    );
+  });
+
+  it("requires a refresh token on refreshable token records", async () => {
+    await expect(
+      serializeTokenRecordForStorage({
+        token: {
+          accessToken: "access-token",
+          expiresAt: 1_000,
+          lifecycle: "refreshable",
+        },
+        key,
+      }),
+    ).rejects.toThrow(
+      "Token record cannot be persisted: refreshToken is required when lifecycle is 'refreshable'",
+    );
+  });
+
+  it("requires an expiration on refreshable token records", async () => {
+    await expect(
+      serializeTokenRecordForStorage({
+        token: {
+          accessToken: "access-token",
+          refreshToken: "refresh-token",
+          lifecycle: "refreshable",
+        },
+        key,
+      }),
+    ).rejects.toThrow(
+      "Token record cannot be persisted: expiresAt is required when lifecycle is 'refreshable'",
+    );
   });
 });

@@ -1,7 +1,7 @@
 {
   "name": "@indev42/connections",
   "version": "0.4.1",
-  "description": "OAuth token management for app integrations.",
+  "description": "OAuth and static token management for app integrations.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -14,6 +14,7 @@
   "files": [
     "dist",
     "README.md",
+    "CONTEXT.md",
     "LICENSE"
   ],
   "publishConfig": {

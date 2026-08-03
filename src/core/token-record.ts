@@ -26,6 +26,22 @@ export function assertTokenRecord(
   ) {
     fields.push("expiresAt must be a finite number when present");
   }
+  if (
+    value.lifecycle !== undefined &&
+    value.lifecycle !== "refreshable" &&
+    value.lifecycle !== "static"
+  ) {
+    fields.push("lifecycle must be 'refreshable' or 'static' when present");
+  }
+  if (value.lifecycle === "static" && value.refreshToken !== undefined) {
+    fields.push("refreshToken must not be present when lifecycle is 'static'");
+  }
+  if (value.lifecycle === "refreshable" && value.refreshToken === undefined) {
+    fields.push("refreshToken is required when lifecycle is 'refreshable'");
+  }
+  if (value.lifecycle === "refreshable" && value.expiresAt === undefined) {
+    fields.push("expiresAt is required when lifecycle is 'refreshable'");
+  }
   if (value.tokenType !== undefined && typeof value.tokenType !== "string") {
     fields.push("tokenType must be a string when present");
   }

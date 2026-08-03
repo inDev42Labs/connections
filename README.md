@@ -1,6 +1,6 @@
 # @indev42/connections
 
-OAuth token management for app integrations. This package provides a small core `TokenManager`, provider adapters, and token stores for persisting access and refresh tokens.
+Token management for app integrations using OAuth or manually provisioned static credentials. This package provides a small core `TokenManager`, provider adapters, and token stores for persisting access and refresh tokens.
 
 See [`CONTEXT.md`](./CONTEXT.md) for the domain language used for connections, providers, and token lifecycles.
 
@@ -63,7 +63,7 @@ await manager.exchangeCodeAndSave({
 });
 ```
 
-Use a valid access token later. The manager refreshes expired tokens automatically when a refresh token is available:
+Use a valid access token later. The manager refreshes refreshable tokens automatically when they enter the refresh window:
 
 ```ts
 const accessToken = await manager.getValidAccessToken(key);
@@ -104,15 +104,39 @@ type TokenRecord = {
   accessToken: string;
   refreshToken?: string;
   expiresAt?: number;
+  lifecycle?: "refreshable" | "static";
   tokenType?: string;
   scopes?: string[];
   metadata?: Record<string, unknown>;
 };
 ```
 
-`expiresAt` is an epoch millisecond timestamp. Tokens without `expiresAt` are treated as valid until revoked or deleted.
+`expiresAt` is an epoch millisecond timestamp. Explicitly refreshable tokens require both `expiresAt` and `refreshToken`. Static tokens may include `expiresAt`, but they never refresh. Tokens without `expiresAt` are treated as valid from local information until replaced or deleted.
 
-The package validates this shape at provider, manager, serialization, and storage boundaries. `accessToken` and any present `refreshToken` must be non-empty strings; malformed records throw `InvalidTokenRecordError` with code `INVALID_TOKEN_RECORD` before they can be persisted or returned.
+The package validates this shape at provider, manager, serialization, and storage boundaries. `accessToken` and any present `refreshToken` must be non-empty strings. A static token cannot contain a refresh token, while an explicitly refreshable token requires a refresh token and expiration. Malformed records throw `InvalidTokenRecordError` with code `INVALID_TOKEN_RECORD` before they can be persisted or returned.
+
+### Static Tokens
+
+Use `saveToken` to manage a manually provisioned API token without registering an OAuth provider:
+
+```ts
+const staticKey = {
+  provider: "service-api",
+  accountId: "tenant-1",
+};
+
+await manager.saveToken({
+  key: staticKey,
+  token: {
+    accessToken: process.env.SERVICE_API_TOKEN!,
+    lifecycle: "static",
+  },
+});
+
+const accessToken = await manager.getValidAccessToken(staticKey);
+```
+
+A static token can include `expiresAt`. It remains valid until that exact time, regardless of `refreshSkewMs`, and then retrieval throws `TokenExpiredError` with code `TOKEN_EXPIRED`. Static tokens are never refreshed. `saveInitialToken` remains available as a deprecated compatibility alias for `saveToken`.
 
 ## TokenManager Configuration
 
@@ -137,6 +161,7 @@ Common methods:
 
 - `getAuthorizationUrl({ key, redirectUri, scopes, state, metadata })`
 - `exchangeCodeAndSave({ key, code, redirectUri, metadata })`
+- `saveToken({ key, token })`
 - `saveInitialToken({ key, token })`
 - `getValidToken(key, { metadata })`
 - `getValidAccessToken(key, { metadata })`
