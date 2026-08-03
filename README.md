@@ -2,6 +2,8 @@
 
 OAuth token management for app integrations. This package provides a small core `TokenManager`, provider adapters, and token stores for persisting access and refresh tokens.
 
+See [`CONTEXT.md`](./CONTEXT.md) for the domain language used for connections, providers, and token lifecycles.
+
 ## Quickstart
 
 Install the package:
