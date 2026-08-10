@@ -35,3 +35,9 @@ export interface OAuthProvider {
 
   revokeToken?(input: RevokeTokenInput): Promise<void>;
 }
+
+export interface StaticTokenProvider {
+  readonly provider: string;
+
+  createToken(accessToken: string): TokenRecord;
+}

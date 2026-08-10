@@ -49,6 +49,10 @@
       "types": "./dist/providers/dummy/index.d.ts",
       "import": "./dist/providers/dummy/index.js"
     },
+    "./providers/retell": {
+      "types": "./dist/providers/retell/index.d.ts",
+      "import": "./dist/providers/retell/index.js"
+    },
     "./providers/salesforce": {
       "types": "./dist/providers/salesforce/index.d.ts",
       "import": "./dist/providers/salesforce/index.js"
