@@ -6,10 +6,13 @@ export type TokenKey = {
   connectionId?: string;
 };
 
+export type TokenLifecycle = "refreshable" | "static";
+
 export type TokenRecord = {
   accessToken: string;
   refreshToken?: string;
   expiresAt?: number;
+  lifecycle?: TokenLifecycle;
   tokenType?: string;
   scopes?: string[];
   metadata?: Record<string, unknown>;

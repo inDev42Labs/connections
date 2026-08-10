@@ -4,6 +4,7 @@ import {
   MissingRefreshTokenError,
   OAuthProviderError,
   OAuthProviderNotRegisteredError,
+  TokenExpiredError,
   TokenNotFoundError,
 } from "./errors";
 import { TokenManager } from "./manager";
@@ -77,6 +78,7 @@ describe("TokenManager", () => {
       accessToken: "soon-expiring-access-token",
       refreshToken: "stored-refresh-token",
       expiresAt: 1_050,
+      lifecycle: "refreshable",
     });
     const provider = createProvider({
       refreshedToken: {
@@ -95,7 +97,53 @@ describe("TokenManager", () => {
     await expect(manager.getValidAccessToken(key)).resolves.toBe(
       "new-access-token",
     );
+    await expect(store.get(key)).resolves.toEqual({
+      accessToken: "new-access-token",
+      refreshToken: "new-refresh-token",
+      expiresAt: 2_000,
+      lifecycle: "refreshable",
+    });
     expect(provider.refreshToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a static token until its exact expiration without applying refresh skew", async () => {
+    const token: TokenRecord = {
+      accessToken: "static-access-token",
+      expiresAt: 1_050,
+      lifecycle: "static",
+    };
+    const provider = createProvider();
+    const manager = new TokenManager({
+      store: createStore(token),
+      providers: [provider],
+      now: () => 1_000,
+      refreshSkewMs: 100,
+    });
+
+    await expect(manager.getValidToken(key)).resolves.toEqual(token);
+    expect(provider.refreshToken).not.toHaveBeenCalled();
+  });
+
+  it("throws TokenExpiredError when a static token reaches its expiration", async () => {
+    const provider = createProvider();
+    const manager = new TokenManager({
+      store: createStore({
+        accessToken: "static-access-token",
+        expiresAt: 1_000,
+        lifecycle: "static",
+      }),
+      providers: [provider],
+      now: () => 1_000,
+    });
+
+    await expect(manager.getValidToken(key)).rejects.toMatchObject({
+      code: "TOKEN_EXPIRED",
+      expiresAt: 1_000,
+    });
+    await expect(manager.getValidToken(key)).rejects.toBeInstanceOf(
+      TokenExpiredError,
+    );
+    expect(provider.refreshToken).not.toHaveBeenCalled();
   });
 
   it("preserves the existing refresh token when the provider returns no new refresh token", async () => {
@@ -489,13 +537,26 @@ describe("TokenManager public OAuth flow", () => {
     await expect(store.get(key)).resolves.toEqual(token);
   });
 
-  it("validates tokens passed to saveInitialToken before persistence", async () => {
+  it("saves a static token without a registered OAuth provider", async () => {
+    const store = createStore();
+    const manager = new TokenManager({ store });
+    const token: TokenRecord = {
+      accessToken: "static-access-token",
+      lifecycle: "static",
+    };
+
+    await manager.saveToken({ key, token });
+
+    await expect(store.get(key)).resolves.toEqual(token);
+  });
+
+  it("validates tokens passed to saveToken before persistence", async () => {
     const store = createStore();
     const put = vi.spyOn(store, "put");
     const manager = new TokenManager({ store });
 
     await expect(
-      manager.saveInitialToken({ key, token: {} as TokenRecord }),
+      manager.saveToken({ key, token: {} as TokenRecord }),
     ).rejects.toBeInstanceOf(InvalidTokenRecordError);
     expect(put).not.toHaveBeenCalled();
   });

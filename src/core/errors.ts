@@ -21,6 +21,14 @@ export class TokenNotFoundError extends ConnectionsError {
   }
 }
 
+export class TokenExpiredError extends ConnectionsError {
+  readonly code = "TOKEN_EXPIRED";
+
+  constructor(readonly expiresAt: number) {
+    super("Token has expired");
+  }
+}
+
 export class MissingRefreshTokenError extends ConnectionsError {
   constructor(message = "Token cannot be refreshed without a refresh token") {
     super(message);
