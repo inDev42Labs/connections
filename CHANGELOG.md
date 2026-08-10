@@ -1,5 +1,11 @@
 # @indev42/connections
 
+## 0.5.0
+
+### Minor Changes
+
+- 05fdea3: Add explicit static and refreshable token lifecycles, support expiring static tokens, and add `TokenManager.saveToken()` as the general token persistence API.
+
 ## 0.4.1
 
 ### Patch Changes
