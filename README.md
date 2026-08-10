@@ -138,6 +138,23 @@ const accessToken = await manager.getValidAccessToken(staticKey);
 
 A static token can include `expiresAt`. It remains valid until that exact time, regardless of `refreshSkewMs`, and then retrieval throws `TokenExpiredError` with code `TOKEN_EXPIRED`. Static tokens are never refreshed. `saveInitialToken` remains available as a deprecated compatibility alias for `saveToken`.
 
+Static token providers can package a service credential with the correct lifecycle and token type. For example, Retell AI uses a dashboard-created API key as a bearer token:
+
+```ts
+import { RetellAIProvider } from "@indev42/connections/providers/retell";
+
+const retell = new RetellAIProvider();
+const retellKey = {
+  provider: retell.provider,
+  accountId: "workspace-id",
+};
+
+await manager.saveToken({
+  key: retellKey,
+  token: retell.createToken(process.env.RETELL_API_KEY!),
+});
+```
+
 ## TokenManager Configuration
 
 ```ts
@@ -169,11 +186,12 @@ Common methods:
 
 ## Providers
 
-Providers implement OAuth service-specific behavior: authorization URLs, code exchange, token refresh, and optional token revocation.
+Providers implement service-specific credential behavior. OAuth providers handle authorization URLs, code exchange, token refresh, and optional token revocation. Static token providers convert manually provisioned credentials into service-appropriate token records and do not need manager registration.
 
 | Provider | Import | Purpose |
 | --- | --- | --- |
 | Dummy | `@indev42/connections/providers/dummy` | Network-free provider for examples, demos, tests, and local sampling. |
+| Retell AI | `@indev42/connections/providers/retell` | Retell API key provider using a static bearer token. |
 | Salesforce | `@indev42/connections/providers/salesforce` | Salesforce OAuth provider with production, sandbox, and custom login URL support. |
 | Zoho | `@indev42/connections/providers/zoho` | Zoho OAuth provider with data center and accounts URL support. |
 
@@ -182,6 +200,7 @@ Built-in providers are also exported from the root package entrypoint:
 ```ts
 import {
   DummyOAuthProvider,
+  RetellAIProvider,
   SalesforceOAuthProvider,
   ZohoOAuthProvider,
 } from "@indev42/connections";

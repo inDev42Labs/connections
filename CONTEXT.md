@@ -20,9 +20,9 @@ The package treats the complete tuple of these values as the connection identity
 
 ## Provider
 
-A **provider** is an adapter for a service's OAuth behavior. An `OAuthProvider` creates authorization URLs, exchanges authorization codes, refreshes tokens, and may revoke tokens remotely.
+A **provider** is an adapter for a service's credential behavior. An `OAuthProvider` creates authorization URLs, exchanges authorization codes, refreshes tokens, and may revoke tokens remotely. A `StaticTokenProvider` converts a manually provisioned credential into the service's static token record.
 
-The `provider` value in a token key also acts as the namespace used to select this adapter. A connection may be stored without a registered provider, but OAuth operations and token refresh require one.
+The `provider` value in a token key also acts as its service namespace. A connection may be stored without a registered provider. OAuth operations and token refresh require a registered `OAuthProvider`; static token providers are factories and are not registered with the manager.
 
 ## Token Record
 
