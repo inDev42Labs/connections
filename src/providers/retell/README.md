@@ -12,7 +12,6 @@ Retell authentication documentation:
 
 ```ts
 import {
-  bindStaticProvider,
   EnvironmentCredentialSource,
   MemoryTokenStore,
   RetellAIProvider,
@@ -22,16 +21,17 @@ import {
 const retell = new RetellAIProvider();
 const manager = new TokenManager({
   providers: {
-    retell: bindStaticProvider(retell, {
+    retell: {
+      adapter: retell,
       source: new EnvironmentCredentialSource({
         key: "RETELL_API_KEY",
         runtimeEnv: process.env,
       }),
-    }),
+    },
   },
 });
 const key = {
-  provider: retell.provider,
+  provider: "retell",
   accountId: "workspace-id",
 };
 
@@ -54,7 +54,7 @@ To manage the token through a standard writable store instead, bind the provider
 const store = new MemoryTokenStore();
 const manager = new TokenManager({
   providers: {
-    retell: bindStaticProvider(new RetellAIProvider(), { store }),
+    retell: { adapter: new RetellAIProvider(), store },
   },
 });
 

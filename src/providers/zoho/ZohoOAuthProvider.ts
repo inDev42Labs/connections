@@ -11,8 +11,6 @@ import {
 import type { ZohoOAuthProviderOptions } from "./zoho.types";
 
 export class ZohoOAuthProvider implements OAuthProvider {
-  readonly provider = "zoho";
-
   private readonly options: ZohoOAuthProviderOptions;
 
   constructor(options: ZohoOAuthProviderOptions) {
@@ -23,8 +21,9 @@ export class ZohoOAuthProvider implements OAuthProvider {
     const credentials = await resolveOAuthClientCredentials(
       this.options.credentials,
       {
-        provider: this.provider,
+        provider: input.key.provider,
         operation: "authorizationUrl",
+        key: input.key,
         metadata: input.metadata,
       },
     );
@@ -52,8 +51,9 @@ export class ZohoOAuthProvider implements OAuthProvider {
     const credentials = await resolveOAuthClientCredentials(
       this.options.credentials,
       {
-        provider: this.provider,
+        provider: input.key.provider,
         operation: "exchangeCode",
+        key: input.key,
         metadata: input.metadata,
       },
     );
@@ -80,8 +80,9 @@ export class ZohoOAuthProvider implements OAuthProvider {
     const credentials = await resolveOAuthClientCredentials(
       this.options.credentials,
       {
-        provider: this.provider,
+        provider: input.key.provider,
         operation: "refreshToken",
+        key: input.key,
         metadata: input.metadata,
       },
     );

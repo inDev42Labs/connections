@@ -28,29 +28,32 @@ export type ProviderBinding =
   | OAuthProviderBinding
   | StaticProviderBinding<unknown>;
 
-export function bindOAuthProvider(
-  adapter: OAuthProvider,
-  store: TokenStore,
-): OAuthProviderBinding {
-  return { adapter, store };
-}
+export type ValidateProviderBinding<TBinding> =
+  TBinding extends {
+    adapter: StaticTokenProvider<infer TCredential>;
+    source: CredentialSource<infer TSourceCredential>;
+  }
+    ? TBinding extends { store: unknown }
+      ? never
+      : [TSourceCredential] extends [TCredential]
+        ? TBinding
+        : never
+    : TBinding extends {
+          adapter: OAuthProvider | StaticTokenProvider<unknown>;
+          store: TokenStore;
+        }
+      ? TBinding extends { source: unknown }
+        ? never
+        : TBinding
+      : never;
 
-export function bindStaticProvider<TCredential>(
-  adapter: StaticTokenProvider<TCredential>,
-  storage: { store: TokenStore },
-): StoredStaticProviderBinding<TCredential>;
-export function bindStaticProvider<TCredential>(
-  adapter: StaticTokenProvider<TCredential>,
-  storage: { source: CredentialSource<NoInfer<TCredential>> },
-): SourcedStaticProviderBinding<TCredential>;
-export function bindStaticProvider<TCredential>(
-  adapter: StaticTokenProvider<TCredential>,
-  storage:
-    | { store: TokenStore }
-    | { source: CredentialSource<NoInfer<TCredential>> },
-): StaticProviderBinding<TCredential> {
-  return { adapter, ...storage } as StaticProviderBinding<TCredential>;
-}
+export type ValidateProviderBindings<
+  TProviders extends Readonly<Record<string, unknown>>,
+> = {
+  [TProvider in keyof TProviders]: ValidateProviderBinding<
+    TProviders[TProvider]
+  >;
+};
 
 export function isOAuthProvider(
   provider: OAuthProvider | StaticTokenProvider<unknown>,

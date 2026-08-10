@@ -5,6 +5,8 @@ import {
   type OAuthProviderBinding,
   type ProviderBinding,
   type SourcedStaticProviderBinding,
+  type ValidateProviderBinding,
+  type ValidateProviderBindings,
 } from "./binding";
 import {
   InvalidTokenRecordError,
@@ -35,8 +37,12 @@ export type ConnectionsEvent = {
   details?: Record<string, unknown>;
 };
 
-export type TokenManagerOptions = {
-  providers?: Readonly<Record<string, ProviderBinding>>;
+export type TokenManagerOptions<
+  TProviders extends Readonly<Record<string, unknown>> = Readonly<
+    Record<string, ProviderBinding>
+  >,
+> = {
+  providers?: TProviders & ValidateProviderBindings<TProviders>;
   refreshSkewMs?: number;
   now?: () => number;
   onEvent?: (event: ConnectionsEvent) => void;
@@ -59,44 +65,45 @@ export type SaveCredentialInput<TCredential = unknown> = {
 /** @deprecated Use SaveTokenInput instead. */
 export type SaveInitialTokenInput = SaveTokenInput;
 
-export type ExchangeCodeAndSaveInput = ExchangeCodeInput & {
-  key: TokenKey;
-};
+export type ExchangeCodeAndSaveInput = ExchangeCodeInput;
 
-export type GetAuthorizationUrlInput = AuthorizationUrlInput & {
-  key: TokenKey;
-};
+export type GetAuthorizationUrlInput = AuthorizationUrlInput;
 
-export class TokenManager {
+export class TokenManager<
+  const TProviders extends Readonly<Record<string, unknown>> = Readonly<
+    Record<string, ProviderBinding>
+  >,
+> {
   private readonly bindings = new Map<string, ProviderBinding>();
   private readonly refreshLocks = new Map<string, Promise<TokenRecord>>();
   private readonly refreshSkewMs: number;
   private readonly now: () => number;
   private readonly onEvent?: (event: ConnectionsEvent) => void;
 
-  constructor(options: TokenManagerOptions = {}) {
+  constructor(options: TokenManagerOptions<TProviders> = {}) {
     this.refreshSkewMs = options.refreshSkewMs ?? 60_000;
     this.now = options.now ?? Date.now;
     this.onEvent = options.onEvent;
 
-    for (const [provider, binding] of Object.entries(options.providers ?? {})) {
-      if (binding.adapter.provider !== provider) {
-        throw new TypeError(
-          `Provider binding '${provider}' uses adapter '${binding.adapter.provider}'`,
-        );
-      }
-      this.use(binding);
+    for (const [provider, binding] of Object.entries(
+      options.providers ?? {},
+    ) as Array<[string, ProviderBinding]>) {
+      this.bindings.set(provider, binding);
     }
   }
 
-  use(binding: ProviderBinding): this {
-    this.bindings.set(binding.adapter.provider, binding);
+  use<TBinding>(
+    provider: string,
+    binding: TBinding & ValidateProviderBinding<TBinding>,
+  ): this {
+    this.bindings.set(provider, binding as ProviderBinding);
     return this;
   }
 
   async getAuthorizationUrl(input: GetAuthorizationUrlInput): Promise<string> {
     const binding = this.getOAuthBinding(input.key.provider, "authorizationUrl");
     return binding.adapter.getAuthorizationUrl({
+      key: input.key,
       redirectUri: input.redirectUri,
       scopes: input.scopes,
       state: input.state,
@@ -112,32 +119,33 @@ export class TokenManager {
     this.emit({
       level: "debug",
       operation: "token.exchange",
-      provider: binding.adapter.provider,
+      provider: input.key.provider,
       outcome: "started",
     });
 
     let token: unknown;
     try {
       token = await binding.adapter.exchangeCode({
+        key: input.key,
         code: input.code,
         redirectUri: input.redirectUri,
         metadata: input.metadata,
       });
       assertTokenRecord(
         token,
-        `${providerDisplayName(binding.adapter.provider)} exchangeCode returned an invalid token record`,
+        `${providerDisplayName(input.key.provider)} exchangeCode returned an invalid token record`,
       );
       this.emit({
         level: "info",
         operation: "token.exchange",
-        provider: binding.adapter.provider,
+        provider: input.key.provider,
         outcome: "succeeded",
         durationMs: this.now() - startedAt,
       });
     } catch (error) {
       this.emitFailure(
         "token.exchange",
-        binding.adapter.provider,
+        input.key.provider,
         error,
         startedAt,
       );
@@ -162,10 +170,12 @@ export class TokenManager {
       );
     }
 
-    const token: unknown = binding.adapter.createToken(input.credential);
+    const token: unknown = binding.adapter.createToken(input.credential, {
+      key: input.key,
+    });
     assertTokenRecord(
       token,
-      `${providerDisplayName(binding.adapter.provider)} createToken returned an invalid token record`,
+      `${providerDisplayName(input.key.provider)} createToken returned an invalid token record`,
     );
     await this.persist(input.key, token, binding.store);
   }
@@ -232,6 +242,7 @@ export class TokenManager {
       binding.adapter.revokeToken
     ) {
       await binding.adapter.revokeToken({
+        key,
         token,
         metadata: options.metadata,
       });
@@ -289,7 +300,7 @@ export class TokenManager {
     this.emit({
       level: "debug",
       operation: "token.refresh",
-      provider: provider.provider,
+      provider: key.provider,
       outcome: "started",
       details: { hadRefreshToken: true },
     });
@@ -297,24 +308,25 @@ export class TokenManager {
     let refreshedToken: unknown;
     try {
       refreshedToken = await provider.refreshToken({
+        key,
         refreshToken: currentToken.refreshToken,
         currentToken,
         metadata: options.metadata,
       });
       assertTokenRecord(
         refreshedToken,
-        `${providerDisplayName(provider.provider)} refreshToken returned an invalid token record`,
+        `${providerDisplayName(key.provider)} refreshToken returned an invalid token record`,
       );
       this.emit({
         level: "info",
         operation: "token.refresh",
-        provider: provider.provider,
+        provider: key.provider,
         outcome: "succeeded",
         durationMs: this.now() - startedAt,
         details: { hadRefreshToken: true },
       });
     } catch (error) {
-      this.emitFailure("token.refresh", provider.provider, error, startedAt, {
+      this.emitFailure("token.refresh", key.provider, error, startedAt, {
         hadRefreshToken: true,
       });
       throw error;
@@ -351,10 +363,10 @@ export class TokenManager {
       const credential = await binding.source.get(key);
       if (credential === null) return null;
 
-      const token: unknown = binding.adapter.createToken(credential);
+      const token: unknown = binding.adapter.createToken(credential, { key });
       assertTokenRecord(
         token,
-        `${providerDisplayName(binding.adapter.provider)} createToken returned an invalid token record`,
+        `${providerDisplayName(key.provider)} createToken returned an invalid token record`,
       );
       return token;
     });

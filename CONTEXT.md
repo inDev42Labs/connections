@@ -20,13 +20,13 @@ The package treats the complete tuple of these values as the connection identity
 
 ## Provider
 
-A **provider** is an adapter for a service's credential behavior. An `OAuthProvider` creates authorization URLs, exchanges authorization codes, refreshes tokens, and may revoke tokens remotely. A `StaticTokenProvider` converts a manually provisioned credential into the service's static token record.
+A **provider** is the application-defined namespace under which a provider binding is registered. This namespace is the `provider` value used in token keys, persistence identity, encryption context, events, and provider request context. Renaming it requires migrating persisted records and encrypted values.
 
-The `provider` value in a token key also acts as its service namespace and selects a registered provider binding. Every manager operation requires a matching binding. OAuth bindings use a writable token store. Static bindings use either a token store or a read-only credential source.
+A **provider adapter** implements a service's credential behavior without owning its registration name. An `OAuthProvider` creates authorization URLs, exchanges authorization codes, refreshes tokens, and may revoke tokens remotely. A `StaticTokenProvider` converts a manually provisioned credential into the service's static token record. Provider operations receive the complete token key selected by the manager.
 
 ## Provider Binding
 
-A **provider binding** associates a service adapter with the storage boundary used for that provider. Bindings allow providers to use separate stores or share the same store. The binding registered under a provider name must contain an adapter with that same name.
+A **provider binding** associates a service adapter with the storage boundary used for that provider namespace. Bindings allow providers to use separate stores or share the same store. OAuth bindings use a writable token store. Static bindings use either a token store or a read-only credential source. The same adapter type may be registered under multiple provider namespaces with different configuration or storage.
 
 ## Token Record
 

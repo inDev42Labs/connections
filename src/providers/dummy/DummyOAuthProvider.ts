@@ -9,14 +9,11 @@ import type {
 import type { DummyOAuthProviderOptions } from "./dummy.types";
 
 export class DummyOAuthProvider implements OAuthProvider {
-  readonly provider: string;
-
   private readonly options: DummyOAuthProviderOptions;
   private readonly revokedTokens = new Set<string>();
 
   constructor(options: DummyOAuthProviderOptions = {}) {
     this.options = options;
-    this.provider = options.provider ?? "dummy";
   }
 
   get revokedTokenCount(): number {
@@ -32,7 +29,7 @@ export class DummyOAuthProvider implements OAuthProvider {
     const scopes = input.scopes ?? this.options.defaultScopes;
 
     url.searchParams.set("response_type", "code");
-    url.searchParams.set("provider", this.provider);
+    url.searchParams.set("provider", input.key.provider);
     url.searchParams.set("redirect_uri", input.redirectUri);
     if (scopes?.length) {
       url.searchParams.set("scope", scopes.join(" "));
@@ -51,7 +48,7 @@ export class DummyOAuthProvider implements OAuthProvider {
       tokenType: this.options.tokenType ?? "Bearer",
       expiresAt: this.expiresAt(),
       metadata: {
-        provider: this.provider,
+        provider: input.key.provider,
         code: input.code,
         redirectUri: input.redirectUri,
       },

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OAuthProviderError } from "../../core";
 import { SalesforceOAuthProvider } from "./SalesforceOAuthProvider";
 
+const key = { provider: "salesforce", accountId: "account-1" };
+
 describe("SalesforceOAuthProvider", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -19,6 +21,7 @@ describe("SalesforceOAuthProvider", () => {
 
     const url = new URL(
       await provider.getAuthorizationUrl({
+        key,
         redirectUri: "https://app.example/oauth/callback",
         state: "csrf-token",
       }),
@@ -46,6 +49,7 @@ describe("SalesforceOAuthProvider", () => {
 
     const url = new URL(
       await provider.getAuthorizationUrl({
+        key,
         redirectUri: "https://app.example/oauth/callback",
         scopes: ["api"],
       }),
@@ -80,6 +84,7 @@ describe("SalesforceOAuthProvider", () => {
 
     await expect(
       provider.exchangeCode({
+        key,
         code: "authorization-code",
         redirectUri: "https://app.example/oauth/callback",
       }),
@@ -131,6 +136,7 @@ describe("SalesforceOAuthProvider", () => {
 
     await expect(
       provider.refreshToken({
+        key,
         refreshToken: "refresh-token",
         currentToken: {
           accessToken: "old-access-token",
@@ -173,6 +179,7 @@ describe("SalesforceOAuthProvider", () => {
     });
 
     await provider.revokeToken({
+      key,
       token: { accessToken: "access-token", refreshToken: "refresh-token" },
     });
 
@@ -201,7 +208,7 @@ describe("SalesforceOAuthProvider", () => {
     });
 
     await expect(
-      provider.exchangeCode({ code: "authorization-code" }),
+      provider.exchangeCode({ key, code: "authorization-code" }),
     ).rejects.toBeInstanceOf(OAuthProviderError);
   });
 });

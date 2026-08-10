@@ -2,21 +2,21 @@ import { describe, expect, it, vi } from "vitest";
 import { RetellAIProvider } from "../providers/retell/RetellAIProvider";
 import { EnvironmentCredentialSource } from "../sources/environment";
 import { MemoryTokenStore } from "../stores/memory/MemoryTokenStore";
-import { bindStaticProvider } from "./binding";
 import {
   ProviderCapabilityError,
   ProviderNotRegisteredError,
   TokenNotFoundError,
 } from "./errors";
 import { TokenManager } from "./manager";
+import type { CredentialSource } from "./credential-source";
 import type { OAuthProvider } from "./provider";
 
 describe("TokenManager provider bindings", () => {
   it("routes each provider through its configured store", async () => {
     const firstStore = new MemoryTokenStore();
     const secondStore = new MemoryTokenStore();
-    const first = createOAuthProvider("first");
-    const second = createOAuthProvider("second");
+    const first = createOAuthProvider();
+    const second = createOAuthProvider();
     const manager = new TokenManager({
       providers: {
         first: { adapter: first, store: firstStore },
@@ -39,34 +39,37 @@ describe("TokenManager provider bindings", () => {
 
   it("normalizes a raw sourced credential without persisting it", async () => {
     const provider = new RetellAIProvider();
+    const createToken = vi.spyOn(provider, "createToken");
     const source = new EnvironmentCredentialSource({
       key: "RETELL_API_KEY",
       runtimeEnv: { RETELL_API_KEY: "raw-retell-key" },
     });
     const manager = new TokenManager({
       providers: {
-        retell: bindStaticProvider(provider, { source }),
+        retell: { adapter: provider, source },
       },
     });
 
-    await expect(
-      manager.getValidToken({ provider: "retell", accountId: "workspace-1" }),
-    ).resolves.toEqual({
+    const key = { provider: "retell", accountId: "workspace-1" };
+
+    await expect(manager.getValidToken(key)).resolves.toEqual({
       accessToken: "raw-retell-key",
       lifecycle: "static",
       tokenType: "Bearer",
     });
+    expect(createToken).toHaveBeenCalledWith("raw-retell-key", { key });
   });
 
   it("reports a missing raw credential as a missing token", async () => {
     const manager = new TokenManager({
       providers: {
-        retell: bindStaticProvider(new RetellAIProvider(), {
+        retell: {
+          adapter: new RetellAIProvider(),
           source: new EnvironmentCredentialSource({
             key: "RETELL_API_KEY",
             runtimeEnv: {},
           }),
-        }),
+        },
       },
     });
 
@@ -81,12 +84,13 @@ describe("TokenManager provider bindings", () => {
       const key = { provider: "retell", accountId: "workspace-1" };
       const manager = new TokenManager({
         providers: {
-          retell: bindStaticProvider(new RetellAIProvider(), {
+          retell: {
+            adapter: new RetellAIProvider(),
             source: new EnvironmentCredentialSource({
               key: "RETELL_API_KEY",
               runtimeEnv: { RETELL_API_KEY: "raw-retell-key" },
             }),
-          }),
+          },
         },
       });
 
@@ -106,7 +110,7 @@ describe("TokenManager provider bindings", () => {
     const store = new MemoryTokenStore();
     const manager = new TokenManager({
       providers: {
-        retell: bindStaticProvider(new RetellAIProvider(), { store }),
+        retell: { adapter: new RetellAIProvider(), store },
       },
     });
     const key = { provider: "retell", accountId: "workspace-1" };
@@ -131,24 +135,47 @@ describe("TokenManager provider bindings", () => {
     ).rejects.toBeInstanceOf(ProviderNotRegisteredError);
   });
 
-  it("rejects a registry key that differs from its adapter provider", () => {
-    expect(
-      () =>
-        new TokenManager({
-          providers: {
-            wrong: {
-              adapter: createOAuthProvider("actual"),
-              store: new MemoryTokenStore(),
-            },
-          },
-        }),
-    ).toThrow("Provider binding 'wrong' uses adapter 'actual'");
+  it("uses the registry key as the provider namespace", async () => {
+    const store = new MemoryTokenStore();
+    const adapter = createOAuthProvider();
+    const manager = new TokenManager({
+      providers: {
+        myCustomProviderKey: { adapter, store },
+      },
+    });
+    const key = {
+      provider: "myCustomProviderKey",
+      accountId: "account-1",
+    };
+
+    await manager.exchangeCodeAndSave({ key, code: "authorization-code" });
+
+    expect(adapter.exchangeCode).toHaveBeenCalledWith(
+      expect.objectContaining({ key }),
+    );
+    await expect(manager.getValidAccessToken(key)).resolves.toBe(
+      "authorization-code-access-token",
+    );
+  });
+
+  it("type-checks source credentials against their static adapter", () => {
+    const adapter = new RetellAIProvider();
+    const source: CredentialSource<number> = {
+      get: () => 42,
+    };
+    const providers = {
+      incompatible: { adapter, source },
+    };
+
+    // @ts-expect-error The source value must match the adapter credential type.
+    const manager = new TokenManager({ providers });
+
+    expect(manager).toBeInstanceOf(TokenManager);
   });
 });
 
-function createOAuthProvider(provider: string): OAuthProvider {
+function createOAuthProvider(): OAuthProvider {
   return {
-    provider,
     getAuthorizationUrl: vi.fn(() => "https://example.com/oauth"),
     exchangeCode: vi.fn(async ({ code }) => ({
       accessToken: `${code}-access-token`,

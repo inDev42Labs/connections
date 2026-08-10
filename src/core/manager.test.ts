@@ -24,27 +24,25 @@ const key: TokenKey = {
 
 type TestTokenManagerOptions = Omit<TokenManagerOptions, "providers"> & {
   store?: TokenStore;
-  providers?: Array<OAuthProvider | StaticTokenProvider>;
+  providers?: NamedProvider[];
+};
+
+type NamedProvider = (OAuthProvider | StaticTokenProvider) & {
+  registrationName: string;
 };
 
 // Keep the existing lifecycle tests concise while routing through real bindings.
 class TokenManager extends BoundTokenManager {
-  private readonly testStore?: TokenStore;
-
   constructor({ store, providers = [], ...options }: TestTokenManagerOptions) {
     super({
       ...options,
       providers: Object.fromEntries(
-        providers.map((adapter) => [adapter.provider, { adapter, store }]),
+        providers.map((adapter) => [
+          adapter.registrationName,
+          { adapter, store },
+        ]),
       ) as Record<string, ProviderBinding>,
     });
-    this.testStore = store;
-  }
-
-  override use(binding: ProviderBinding | OAuthProvider): this {
-    if ("adapter" in binding) return super.use(binding);
-    if (!this.testStore) throw new TypeError("A test store is required");
-    return super.use({ adapter: binding, store: this.testStore });
   }
 }
 
@@ -93,6 +91,7 @@ describe("TokenManager", () => {
     );
     await expect(store.get(key)).resolves.toEqual(refreshedToken);
     expect(provider.refreshToken).toHaveBeenCalledWith({
+      key,
       refreshToken: "stored-refresh-token",
       currentToken: {
         accessToken: "expired-access-token",
@@ -337,6 +336,7 @@ describe("TokenManager", () => {
 
     expect(events).toEqual(["revoke", "delete"]);
     expect(provider.revokeToken).toHaveBeenCalledWith({
+      key,
       token,
       metadata: { reason: "test" },
     });
@@ -536,6 +536,7 @@ describe("TokenManager public OAuth flow", () => {
     });
 
     expect(provider.exchangeCode).toHaveBeenCalledWith({
+      key,
       code: "authorization-code",
       redirectUri: "https://app.example/oauth/callback",
       metadata,
@@ -602,9 +603,10 @@ describe("TokenManager public OAuth flow", () => {
 
   it("allows providers to be registered after construction with use()", async () => {
     const provider = createProvider({ authorizationUrl: "https://example.com/late" });
-    const manager = new TokenManager({ store: createStore() });
+    const store = createStore();
+    const manager = new TokenManager({ store });
 
-    manager.use(provider);
+    manager.use("test", { adapter: provider, store });
 
     await expect(
       manager.getAuthorizationUrl({
@@ -621,9 +623,12 @@ describe("TokenManager public OAuth flow", () => {
     const secondProvider = createProvider({
       authorizationUrl: "https://second.example/oauth",
     });
-    const manager = new TokenManager({ store: createStore() });
+    const store = createStore();
+    const manager = new TokenManager({ store });
 
-    manager.use(firstProvider).use(secondProvider);
+    manager
+      .use("test", { adapter: firstProvider, store })
+      .use("test", { adapter: secondProvider, store });
 
     await expect(
       manager.getAuthorizationUrl({
@@ -949,6 +954,7 @@ describe("TokenManager integration with MemoryTokenStore", () => {
     await manager.revoke(key);
 
     expect(provider.revokeToken).toHaveBeenCalledWith({
+      key,
       token,
       metadata: undefined,
     });
@@ -1027,9 +1033,9 @@ function createProvider(options: {
   refreshImplementation?: OAuthProvider["refreshToken"];
   revokeImplementation?: NonNullable<OAuthProvider["revokeToken"]>;
   withRevoke?: boolean;
-} = {}): OAuthProvider {
-  const provider: OAuthProvider = {
-    provider: options.provider ?? "test",
+} = {}): OAuthProvider & { registrationName: string } {
+  const provider: OAuthProvider & { registrationName: string } = {
+    registrationName: options.provider ?? "test",
     getAuthorizationUrl: vi.fn(
       async () => options.authorizationUrl ?? "https://example.com/oauth",
     ),
@@ -1056,9 +1062,11 @@ function createProvider(options: {
   return provider;
 }
 
-function createStaticProvider(): StaticTokenProvider {
+function createStaticProvider(): StaticTokenProvider & {
+  registrationName: string;
+} {
   return {
-    provider: "test",
+    registrationName: "test",
     createToken: (credential) => ({
       accessToken: credential,
       lifecycle: "static",

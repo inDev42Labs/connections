@@ -1,13 +1,12 @@
 import {
   assertTokenRecord,
   type StaticTokenProvider,
+  type TokenKey,
   type TokenRecord,
 } from "../../core";
 
 export class RetellAIProvider implements StaticTokenProvider {
-  readonly provider = "retell";
-
-  createToken(apiKey: string): TokenRecord {
+  createToken(apiKey: string, _context: { key: TokenKey }): TokenRecord {
     const token: TokenRecord = {
       accessToken: apiKey,
       lifecycle: "static",

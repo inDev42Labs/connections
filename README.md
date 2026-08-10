@@ -125,7 +125,6 @@ Bind a static provider to a standard store when the application should manage th
 
 ```ts
 import {
-  bindStaticProvider,
   EnvironmentCredentialSource,
   MemoryTokenStore,
   RetellAIProvider,
@@ -136,7 +135,7 @@ const retell = new RetellAIProvider();
 const store = new MemoryTokenStore();
 const manager = new TokenManager({
   providers: {
-    retell: bindStaticProvider(retell, { store }),
+    retell: { adapter: retell, store },
   },
 });
 
@@ -157,12 +156,13 @@ Use a credential source when a raw credential is managed outside this package. E
 ```ts
 const manager = new TokenManager({
   providers: {
-    retell: bindStaticProvider(new RetellAIProvider(), {
+    retell: {
+      adapter: new RetellAIProvider(),
       source: new EnvironmentCredentialSource({
         key: "RETELL_API_KEY",
         runtimeEnv: process.env,
       }),
-    }),
+    },
   },
 });
 
@@ -189,10 +189,21 @@ const manager = new TokenManager({
 
 Options:
 
-- `providers`: provider-name map of bindings. OAuth bindings require an adapter and store. Static bindings use either a store or credential source. The map key must equal `adapter.provider`.
+- `providers`: provider-binding map. The map key is the stable provider namespace used by `TokenKey`, persistence, encryption context, events, and provider request context. OAuth bindings require an adapter and store. Static bindings use either a store or credential source.
 - `refreshSkewMs`: how early to refresh expiring tokens. Defaults to `60_000`.
 - `now`: optional clock override, mainly for tests.
 - `onEvent`: optional structured callback for exchange, refresh, load, and persistence outcomes. Events contain sanitized diagnostics and never token values, authorization codes, client secrets, encrypted records, or response bodies. Callback failures are ignored so observability cannot interrupt token handling.
+
+Register or replace a binding after construction with its namespace:
+
+```ts
+manager.use("myCustomRetellKey", {
+  adapter: new RetellAIProvider(),
+  store,
+});
+```
+
+Provider maps and `use` calls validate static adapter and credential source types directly. A source that returns a credential type the adapter cannot consume is rejected by TypeScript.
 
 Common methods:
 
@@ -324,12 +335,15 @@ The encryption context includes the `TokenKey` and optional store name.
 Implement `OAuthProvider` when adding a new OAuth service:
 
 ```ts
-import type { OAuthProvider, TokenRecord } from "@indev42/connections";
+import type {
+  OAuthProvider,
+  TokenKey,
+  TokenRecord,
+} from "@indev42/connections";
 
 class ExampleProvider implements OAuthProvider {
-  readonly provider = "example";
-
   getAuthorizationUrl(input: {
+    key: TokenKey;
     redirectUri: string;
     scopes?: string[];
     state?: string;
@@ -339,6 +353,7 @@ class ExampleProvider implements OAuthProvider {
   }
 
   async exchangeCode(input: {
+    key: TokenKey;
     code: string;
     redirectUri?: string;
     metadata?: Record<string, unknown>;
@@ -347,6 +362,7 @@ class ExampleProvider implements OAuthProvider {
   }
 
   async refreshToken(input: {
+    key: TokenKey;
     refreshToken: string;
     currentToken?: TokenRecord;
     metadata?: Record<string, unknown>;
@@ -356,7 +372,7 @@ class ExampleProvider implements OAuthProvider {
 }
 ```
 
-OAuth provider methods receive OAuth request data and optional metadata. They do not receive the app's `TokenKey`; key ownership stays inside `TokenManager` and the configured storage boundary.
+Provider adapters do not own their registration names. The manager passes the complete `TokenKey` into provider methods so adapters and dynamic credential resolvers can use the configured namespace, account, and connection context.
 
 ## Custom Stores
 
