@@ -1,5 +1,11 @@
 # @indev42/connections
 
+## 0.6.0
+
+### Minor Changes
+
+- 442f609: Add a Retell AI provider that converts API keys into static bearer token records.
+
 ## 0.5.0
 
 ### Minor Changes
