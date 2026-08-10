@@ -61,6 +61,14 @@
       "types": "./dist/providers/zoho/index.d.ts",
       "import": "./dist/providers/zoho/index.js"
     },
+    "./sources": {
+      "types": "./dist/sources/index.d.ts",
+      "import": "./dist/sources/index.js"
+    },
+    "./sources/environment": {
+      "types": "./dist/sources/environment/index.d.ts",
+      "import": "./dist/sources/environment/index.js"
+    },
     "./stores/convex": {
       "types": "./dist/stores/convex/index.d.ts",
       "import": "./dist/stores/convex/index.js"

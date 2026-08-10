@@ -1,5 +1,4 @@
 export type DummyOAuthProviderOptions = {
-  provider?: string;
   authorizationUrl?: string;
   defaultScopes?: string[];
   accessTokenPrefix?: string;

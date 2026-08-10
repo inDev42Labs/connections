@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OAuthProviderError } from "../../core";
 import { ZohoOAuthProvider } from "./ZohoOAuthProvider";
 
+const key = { provider: "zoho", accountId: "account-1" };
+
 describe("ZohoOAuthProvider", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -17,6 +19,7 @@ describe("ZohoOAuthProvider", () => {
 
     const url = new URL(
       await provider.getAuthorizationUrl({
+        key,
         redirectUri: "https://app.example/oauth/callback",
         scopes: ["ZohoCRM.modules.READ", "ZohoCRM.settings.READ"],
         state: "csrf-token",
@@ -39,6 +42,28 @@ describe("ZohoOAuthProvider", () => {
     expect(url.searchParams.get("prompt")).toBe("consent");
   });
 
+  it("passes the binding key to dynamic credential resolution", async () => {
+    const credentials = vi.fn(async () => ({ clientId: "client-id" }));
+    const provider = new ZohoOAuthProvider({ credentials });
+    const aliasedKey = {
+      provider: "customZohoConnection",
+      accountId: "account-1",
+      connectionId: "connection-1",
+    };
+
+    await provider.getAuthorizationUrl({
+      key: aliasedKey,
+      redirectUri: "https://app.example/oauth/callback",
+    });
+
+    expect(credentials).toHaveBeenCalledWith({
+      provider: "customZohoConnection",
+      operation: "authorizationUrl",
+      key: aliasedKey,
+      metadata: undefined,
+    });
+  });
+
   it("exchanges an authorization code at the token endpoint", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_000);
     const fetchMock = vi.fn(async (_url: URL | string, _init?: RequestInit) =>
@@ -59,6 +84,7 @@ describe("ZohoOAuthProvider", () => {
 
     await expect(
       provider.exchangeCode({
+        key,
         code: "authorization-code",
         redirectUri: "https://app.example/oauth/callback",
       }),
@@ -102,7 +128,7 @@ describe("ZohoOAuthProvider", () => {
     });
 
     await expect(
-      provider.refreshToken({ refreshToken: "refresh-token" }),
+      provider.refreshToken({ key, refreshToken: "refresh-token" }),
     ).resolves.toEqual({
       accessToken: "new-access-token",
       tokenType: "Bearer",
@@ -127,7 +153,7 @@ describe("ZohoOAuthProvider", () => {
     const provider = createProvider();
 
     await expect(
-      provider.exchangeCode({ code: "authorization-code" }),
+      provider.exchangeCode({ key, code: "authorization-code" }),
     ).rejects.toThrow(message);
   });
 
@@ -138,7 +164,7 @@ describe("ZohoOAuthProvider", () => {
     );
 
     await expect(
-      createProvider().refreshToken({ refreshToken: "refresh-token" }),
+      createProvider().refreshToken({ key, refreshToken: "refresh-token" }),
     ).rejects.toMatchObject({
       name: "OAuthProviderError",
       oauthErrorCode: "invalid_client",
@@ -153,7 +179,7 @@ describe("ZohoOAuthProvider", () => {
     );
 
     await expect(
-      createProvider().exchangeCode({ code: "authorization-code" }),
+      createProvider().exchangeCode({ key, code: "authorization-code" }),
     ).rejects.toMatchObject({
       name: "OAuthProviderError",
       status: 200,
@@ -176,7 +202,7 @@ describe("ZohoOAuthProvider", () => {
     );
 
     const error = await createProvider()
-      .exchangeCode({ code: "authorization-code" })
+      .exchangeCode({ key, code: "authorization-code" })
       .catch((cause: unknown) => cause);
 
     expect(error).toBeInstanceOf(OAuthProviderError);
@@ -194,7 +220,7 @@ describe("ZohoOAuthProvider", () => {
     );
 
     await expect(
-      createProvider().exchangeCode({ code: "authorization-code" }),
+      createProvider().exchangeCode({ key, code: "authorization-code" }),
     ).rejects.toThrow("expires_in must be a finite non-negative number");
   });
 
@@ -208,7 +234,7 @@ describe("ZohoOAuthProvider", () => {
       credentials: { clientId: "client-id" },
     });
 
-    await provider.revokeToken({ token: { accessToken: "access-token" } });
+    await provider.revokeToken({ key, token: { accessToken: "access-token" } });
 
     const [url, init] = fetchMock.mock.calls[0]!;
     const revokeUrl = new URL(String(url));
@@ -230,7 +256,7 @@ describe("ZohoOAuthProvider", () => {
     });
 
     await expect(
-      provider.revokeToken({ token: { accessToken: "access-token" } }),
+      provider.revokeToken({ key, token: { accessToken: "access-token" } }),
     ).rejects.toBeInstanceOf(OAuthProviderError);
   });
 });

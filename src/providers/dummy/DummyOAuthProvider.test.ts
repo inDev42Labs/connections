@@ -3,12 +3,15 @@ import { MemoryTokenStore } from "../../stores/memory";
 import { TokenManager } from "../../core";
 import { DummyOAuthProvider } from "./DummyOAuthProvider";
 
+const key = { provider: "dummy", accountId: "account-1" };
+
 describe("DummyOAuthProvider", () => {
   it("builds a deterministic authorization URL without network calls", async () => {
     const provider = new DummyOAuthProvider({ defaultScopes: ["read", "write"] });
 
     const url = new URL(
       await provider.getAuthorizationUrl({
+        key,
         redirectUri: "https://app.example/oauth/callback",
         state: "csrf-token",
       }),
@@ -25,7 +28,7 @@ describe("DummyOAuthProvider", () => {
   it("exchanges a code for deterministic sample tokens", async () => {
     const provider = new DummyOAuthProvider({ now: () => 1_000, expiresInMs: 60_000 });
 
-    await expect(provider.exchangeCode({ code: "sample-code" })).resolves.toEqual({
+    await expect(provider.exchangeCode({ key, code: "sample-code" })).resolves.toEqual({
       accessToken: "dummy-access-sample-code",
       refreshToken: "dummy-refresh-sample-code",
       tokenType: "Bearer",
@@ -43,6 +46,7 @@ describe("DummyOAuthProvider", () => {
 
     await expect(
       provider.refreshToken({
+        key,
         refreshToken: "dummy-refresh-sample-code",
         currentToken: {
           accessToken: "old-access-token",
@@ -66,12 +70,11 @@ describe("DummyOAuthProvider", () => {
     const provider = new DummyOAuthProvider({ now: () => 1_000, expiresInMs: 1 });
     const store = new MemoryTokenStore();
     const manager = new TokenManager({
-      store,
-      providers: [provider],
+      providers: {
+        dummy: { adapter: provider, store },
+      },
       now: () => 2_000,
     });
-    const key = { provider: "dummy", accountId: "account-1" };
-
     await manager.exchangeCodeAndSave({ key, code: "sample-code" });
 
     await expect(manager.getValidAccessToken(key)).resolves.toBe(

@@ -28,8 +28,6 @@ type SalesforceTokenResponse = {
 };
 
 export class SalesforceOAuthProvider implements OAuthProvider {
-  readonly provider = "salesforce";
-
   private readonly options: SalesforceOAuthProviderOptions;
 
   constructor(options: SalesforceOAuthProviderOptions) {
@@ -40,8 +38,9 @@ export class SalesforceOAuthProvider implements OAuthProvider {
     const credentials = await resolveOAuthClientCredentials(
       this.options.credentials,
       {
-        provider: this.provider,
+        provider: input.key.provider,
         operation: "authorizationUrl",
+        key: input.key,
         metadata: input.metadata,
       },
     );
@@ -71,8 +70,9 @@ export class SalesforceOAuthProvider implements OAuthProvider {
     const credentials = await resolveOAuthClientCredentials(
       this.options.credentials,
       {
-        provider: this.provider,
+        provider: input.key.provider,
         operation: "exchangeCode",
+        key: input.key,
         metadata: input.metadata,
       },
     );
@@ -99,8 +99,9 @@ export class SalesforceOAuthProvider implements OAuthProvider {
     const credentials = await resolveOAuthClientCredentials(
       this.options.credentials,
       {
-        provider: this.provider,
+        provider: input.key.provider,
         operation: "refreshToken",
+        key: input.key,
         metadata: input.metadata,
       },
     );

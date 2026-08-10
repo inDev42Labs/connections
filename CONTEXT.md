@@ -4,9 +4,9 @@ This document defines the domain language used by `@indev42/connections`. It des
 
 ## Connection
 
-A **connection** is a locally managed credential relationship with an external service. A connection is identified by a `TokenKey` and represented by a stored `TokenRecord`.
+A **connection** is a credential relationship with an external service managed through a provider binding. A connection is identified by a `TokenKey` and represented at runtime by a `TokenRecord`.
 
-Connections are local records. Their existence does not guarantee that the external service still accepts the associated credential.
+A connection may be persisted as a local token record or derived from an externally managed credential source. Its existence does not guarantee that the external service still accepts the associated credential.
 
 ## Token Key
 
@@ -20,13 +20,17 @@ The package treats the complete tuple of these values as the connection identity
 
 ## Provider
 
-A **provider** is an adapter for a service's credential behavior. An `OAuthProvider` creates authorization URLs, exchanges authorization codes, refreshes tokens, and may revoke tokens remotely. A `StaticTokenProvider` converts a manually provisioned credential into the service's static token record.
+A **provider** is the application-defined namespace under which a provider binding is registered. This namespace is the `provider` value used in token keys, persistence identity, encryption context, events, and provider request context. Renaming it requires migrating persisted records and encrypted values.
 
-The `provider` value in a token key also acts as its service namespace. A connection may be stored without a registered provider. OAuth operations and token refresh require a registered `OAuthProvider`; static token providers are factories and are not registered with the manager.
+A **provider adapter** implements a service's credential behavior without owning its registration name. An `OAuthProvider` creates authorization URLs, exchanges authorization codes, refreshes tokens, and may revoke tokens remotely. A `StaticTokenProvider` converts a manually provisioned credential into the service's static token record. Provider operations receive the complete token key selected by the manager.
+
+## Provider Binding
+
+A **provider binding** associates a service adapter with the storage boundary used for that provider namespace. Bindings allow providers to use separate stores or share the same store. OAuth bindings use a writable token store. Static bindings use either a token store or a read-only credential source. The same adapter type may be registered under multiple provider namespaces with different configuration or storage.
 
 ## Token Record
 
-A **token record** is the credential data stored for a connection. It contains an access token and may contain a refresh token, expiration time, lifecycle, token type, scopes, and provider-specific metadata.
+A **token record** is the normalized credential data used by the manager and persisted by token stores. It contains an access token and may contain a refresh token, expiration time, lifecycle, token type, scopes, and provider-specific metadata.
 
 The package validates the shape of token records but does not inspect token contents or verify them with the external service.
 
@@ -42,7 +46,7 @@ Having a refresh token does not by itself trigger refresh. Refresh is based on `
 
 ## Static Token
 
-A **static token** is a manually provisioned credential with `lifecycle: "static"` that this package stores and returns but does not acquire or rotate through OAuth. Static tokens can be saved with `saveToken` without registering an OAuth provider.
+A **static token** is a manually provisioned credential that this package does not acquire or rotate through OAuth. A stored static binding can persist a normalized record with `saveToken` or normalize and persist a raw credential with `saveCredential`. A sourced static binding normalizes its raw credential in memory on each load.
 
 When a static token has no `expiresAt`, the manager treats it as valid until it is replaced or deleted. This means only that the package has no expiration time to act on; it does not guarantee that the credential never expires, is not revoked, or remains accepted by the external service.
 
@@ -58,16 +62,20 @@ A token without `expiresAt` is therefore treated as valid based on local informa
 
 ## Legacy Lifecycle
 
-The lifecycle field is optional for compatibility with existing token records and OAuth providers. When `lifecycle` is omitted, the manager retains its original behavior: `expiresAt` determines whether to refresh, and an expiring token without a refresh token cannot be refreshed.
+The lifecycle field is optional for compatibility with existing token records and OAuth providers. For OAuth bindings, when `lifecycle` is omitted, `expiresAt` determines whether to refresh and an expiring token without a refresh token cannot be refreshed. Static bindings never refresh, even when a stored legacy record omits `lifecycle`.
 
 ## Revocation And Deletion
 
 **Revocation** invalidates a credential with the external service when the registered provider supports remote revocation. **Deletion** removes the connection's token record from the local store.
 
-`TokenManager.revoke` attempts supported remote revocation first and then deletes the local record. If no provider or remote revocation method is available, it only deletes the local record.
+For OAuth bindings, `TokenManager.revoke` attempts supported remote revocation first and then deletes the local record. For stored static bindings, it deletes the local record. Revocation is unsupported for source-backed bindings because the manager cannot mutate an externally managed credential source.
 
 Deleting a connection does not otherwise guarantee that its credential is invalidated externally.
 
 ## Token Store
 
 A **token store** persists token records by token key. Stores support reading, writing, and deleting records. "Static token" describes token lifecycle and does not mean that the underlying store is read-only.
+
+## Credential Source
+
+A **credential source** reads an externally managed, provider-specific raw credential. Sources do not return token records and do not support writes or deletion. A static provider converts a source value into a normalized token record before the manager returns it. Environment variables and external secret configuration are credential sources rather than token stores.
