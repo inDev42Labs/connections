@@ -1,3 +1,5 @@
+export * from "./binding";
+export * from "./credential-source";
 export * from "./encryption";
 export * from "./errors";
 export * from "./manager";

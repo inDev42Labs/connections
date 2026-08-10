@@ -10,6 +10,8 @@ export default defineConfig({
     "providers/retell/index": "src/providers/retell/index.ts",
     "providers/salesforce/index": "src/providers/salesforce/index.ts",
     "providers/zoho/index": "src/providers/zoho/index.ts",
+    "sources/index": "src/sources/index.ts",
+    "sources/environment/index": "src/sources/environment/index.ts",
     "stores/convex/index": "src/stores/convex/index.ts",
     "stores/memory/index": "src/stores/memory/index.ts",
     "stores/neon/index": "src/stores/neon/index.ts",

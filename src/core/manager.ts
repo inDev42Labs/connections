@@ -1,16 +1,21 @@
 import {
+  isOAuthProvider,
+  isOAuthProviderBinding,
+  isSourcedStaticProviderBinding,
+  type OAuthProviderBinding,
+  type ProviderBinding,
+  type SourcedStaticProviderBinding,
+} from "./binding";
+import {
   InvalidTokenRecordError,
   MissingRefreshTokenError,
   OAuthProviderError,
-  OAuthProviderNotRegisteredError,
+  ProviderCapabilityError,
+  ProviderNotRegisteredError,
   TokenExpiredError,
   TokenNotFoundError,
 } from "./errors";
-import type {
-  AuthorizationUrlInput,
-  ExchangeCodeInput,
-  OAuthProvider,
-} from "./provider";
+import type { AuthorizationUrlInput, ExchangeCodeInput } from "./provider";
 import { serializeTokenKey, type TokenStore } from "./store";
 import { assertTokenRecord } from "./token-record";
 import type { TokenKey, TokenRecord } from "./types";
@@ -31,8 +36,7 @@ export type ConnectionsEvent = {
 };
 
 export type TokenManagerOptions = {
-  store: TokenStore;
-  providers?: OAuthProvider[];
+  providers?: Readonly<Record<string, ProviderBinding>>;
   refreshSkewMs?: number;
   now?: () => number;
   onEvent?: (event: ConnectionsEvent) => void;
@@ -47,6 +51,11 @@ export type SaveTokenInput = {
   token: TokenRecord;
 };
 
+export type SaveCredentialInput<TCredential = unknown> = {
+  key: TokenKey;
+  credential: TCredential;
+};
+
 /** @deprecated Use SaveTokenInput instead. */
 export type SaveInitialTokenInput = SaveTokenInput;
 
@@ -59,76 +68,116 @@ export type GetAuthorizationUrlInput = AuthorizationUrlInput & {
 };
 
 export class TokenManager {
-  private readonly providers = new Map<string, OAuthProvider>();
+  private readonly bindings = new Map<string, ProviderBinding>();
   private readonly refreshLocks = new Map<string, Promise<TokenRecord>>();
   private readonly refreshSkewMs: number;
   private readonly now: () => number;
   private readonly onEvent?: (event: ConnectionsEvent) => void;
-  private readonly store: TokenStore;
 
-  constructor(options: TokenManagerOptions) {
-    this.store = options.store;
+  constructor(options: TokenManagerOptions = {}) {
     this.refreshSkewMs = options.refreshSkewMs ?? 60_000;
     this.now = options.now ?? Date.now;
     this.onEvent = options.onEvent;
 
-    for (const provider of options.providers ?? []) {
-      this.use(provider);
+    for (const [provider, binding] of Object.entries(options.providers ?? {})) {
+      if (binding.adapter.provider !== provider) {
+        throw new TypeError(
+          `Provider binding '${provider}' uses adapter '${binding.adapter.provider}'`,
+        );
+      }
+      this.use(binding);
     }
   }
 
-  use(provider: OAuthProvider): this {
-    this.providers.set(provider.provider, provider);
+  use(binding: ProviderBinding): this {
+    this.bindings.set(binding.adapter.provider, binding);
     return this;
   }
 
   async getAuthorizationUrl(input: GetAuthorizationUrlInput): Promise<string> {
-    const provider = this.getProvider(input.key.provider);
-    return provider.getAuthorizationUrl(input);
+    const binding = this.getOAuthBinding(input.key.provider, "authorizationUrl");
+    return binding.adapter.getAuthorizationUrl({
+      redirectUri: input.redirectUri,
+      scopes: input.scopes,
+      state: input.state,
+      metadata: input.metadata,
+    });
   }
 
   async exchangeCodeAndSave(
     input: ExchangeCodeAndSaveInput,
   ): Promise<TokenRecord> {
-    const provider = this.getProvider(input.key.provider);
+    const binding = this.getOAuthBinding(input.key.provider, "exchangeCode");
     const startedAt = this.now();
     this.emit({
       level: "debug",
       operation: "token.exchange",
-      provider: provider.provider,
+      provider: binding.adapter.provider,
       outcome: "started",
     });
 
     let token: unknown;
     try {
-      token = await provider.exchangeCode({
+      token = await binding.adapter.exchangeCode({
         code: input.code,
         redirectUri: input.redirectUri,
         metadata: input.metadata,
       });
       assertTokenRecord(
         token,
-        `${providerDisplayName(provider.provider)} exchangeCode returned an invalid token record`,
+        `${providerDisplayName(binding.adapter.provider)} exchangeCode returned an invalid token record`,
       );
       this.emit({
         level: "info",
         operation: "token.exchange",
-        provider: provider.provider,
+        provider: binding.adapter.provider,
         outcome: "succeeded",
         durationMs: this.now() - startedAt,
       });
     } catch (error) {
-      this.emitFailure("token.exchange", provider.provider, error, startedAt);
+      this.emitFailure(
+        "token.exchange",
+        binding.adapter.provider,
+        error,
+        startedAt,
+      );
       throw error;
     }
 
-    await this.persist(input.key, token);
+    await this.persist(input.key, token, binding.store);
     return token;
   }
 
+  async saveCredential<TCredential>(
+    input: SaveCredentialInput<TCredential>,
+  ): Promise<void> {
+    const binding = this.getBinding(input.key.provider);
+    if (
+      isOAuthProviderBinding(binding) ||
+      isSourcedStaticProviderBinding(binding)
+    ) {
+      throw new ProviderCapabilityError(
+        input.key.provider,
+        "saveCredential",
+      );
+    }
+
+    const token: unknown = binding.adapter.createToken(input.credential);
+    assertTokenRecord(
+      token,
+      `${providerDisplayName(binding.adapter.provider)} createToken returned an invalid token record`,
+    );
+    await this.persist(input.key, token, binding.store);
+  }
+
   async saveToken(input: SaveTokenInput): Promise<void> {
+    const binding = this.getBinding(input.key.provider);
+    if (isSourcedStaticProviderBinding(binding)) {
+      throw new ProviderCapabilityError(input.key.provider, "saveToken");
+    }
+
     assertTokenRecord(input.token, "Token is invalid");
-    await this.persist(input.key, input.token);
+    await this.persist(input.key, input.token, binding.store);
   }
 
   /** @deprecated Use saveToken instead. */
@@ -149,41 +198,53 @@ export class TokenManager {
     key: TokenKey,
     options: TokenManagerRequestOptions = {},
   ): Promise<TokenRecord> {
-    const token = await this.load(key);
+    const binding = this.getBinding(key.provider);
+    const token = await this.load(key, binding);
 
     if (!token) {
       throw new TokenNotFoundError();
     }
 
-    if (token.lifecycle === "static") {
-      if (token.expiresAt !== undefined && token.expiresAt <= this.now()) {
-        throw new TokenExpiredError(token.expiresAt);
-      }
-      return token;
+    if (!isOAuthProviderBinding(binding) || token.lifecycle === "static") {
+      return this.assertStaticTokenIsCurrent(token);
     }
 
     if (!this.shouldRefresh(token)) {
       return token;
     }
 
-    return this.refreshAndSave(key, token, options);
+    return this.refreshAndSave(key, token, options, binding);
   }
 
   async revoke(
     key: TokenKey,
     options: TokenManagerRequestOptions = {},
   ): Promise<void> {
-    const token = await this.load(key);
-    const provider = this.providers.get(key.provider);
+    const binding = this.getBinding(key.provider);
+    if (isSourcedStaticProviderBinding(binding)) {
+      throw new ProviderCapabilityError(key.provider, "revoke");
+    }
 
-    if (token && provider?.revokeToken) {
-      await provider.revokeToken({
+    const token = await this.loadFromStore(key, binding.store);
+    if (
+      token &&
+      isOAuthProvider(binding.adapter) &&
+      binding.adapter.revokeToken
+    ) {
+      await binding.adapter.revokeToken({
         token,
         metadata: options.metadata,
       });
     }
 
-    await this.store.delete(key);
+    await binding.store.delete(key);
+  }
+
+  private assertStaticTokenIsCurrent(token: TokenRecord): TokenRecord {
+    if (token.expiresAt !== undefined && token.expiresAt <= this.now()) {
+      throw new TokenExpiredError(token.expiresAt);
+    }
+    return token;
   }
 
   private shouldRefresh(token: TokenRecord): boolean {
@@ -197,20 +258,20 @@ export class TokenManager {
     key: TokenKey,
     currentToken: TokenRecord,
     options: TokenManagerRequestOptions,
+    binding: OAuthProviderBinding,
   ): Promise<TokenRecord> {
     const lockKey = serializeTokenKey(key);
     const existingRefresh = this.refreshLocks.get(lockKey);
+    if (existingRefresh) return existingRefresh;
 
-    if (existingRefresh) {
-      return existingRefresh;
-    }
-
-    const refresh = this.refreshAndPersist(key, currentToken, options).finally(
-      () => {
-        this.refreshLocks.delete(lockKey);
-      },
-    );
-
+    const refresh = this.refreshAndPersist(
+      key,
+      currentToken,
+      options,
+      binding,
+    ).finally(() => {
+      this.refreshLocks.delete(lockKey);
+    });
     this.refreshLocks.set(lockKey, refresh);
     return refresh;
   }
@@ -219,12 +280,11 @@ export class TokenManager {
     key: TokenKey,
     currentToken: TokenRecord,
     options: TokenManagerRequestOptions,
+    binding: OAuthProviderBinding,
   ): Promise<TokenRecord> {
-    if (!currentToken.refreshToken) {
-      throw new MissingRefreshTokenError();
-    }
+    if (!currentToken.refreshToken) throw new MissingRefreshTokenError();
 
-    const provider = this.getProvider(key.provider);
+    const provider = binding.adapter;
     const startedAt = this.now();
     this.emit({
       level: "debug",
@@ -265,13 +325,58 @@ export class TokenManager {
       ...refreshedToken,
       refreshToken: refreshedToken.refreshToken ?? currentToken.refreshToken,
     };
-
-    assertTokenRecord(nextToken, "Refreshed token is invalid before persistence");
-    await this.persist(key, nextToken);
+    assertTokenRecord(
+      nextToken,
+      "Refreshed token is invalid before persistence",
+    );
+    await this.persist(key, nextToken, binding.store);
     return nextToken;
   }
 
-  private async load(key: TokenKey): Promise<TokenRecord | null> {
+  private load(
+    key: TokenKey,
+    binding: ProviderBinding,
+  ): Promise<TokenRecord | null> {
+    if (isSourcedStaticProviderBinding(binding)) {
+      return this.loadFromSource(key, binding);
+    }
+    return this.loadFromStore(key, binding.store);
+  }
+
+  private async loadFromSource(
+    key: TokenKey,
+    binding: SourcedStaticProviderBinding<unknown>,
+  ): Promise<TokenRecord | null> {
+    return this.observeLoad(key, async () => {
+      const credential = await binding.source.get(key);
+      if (credential === null) return null;
+
+      const token: unknown = binding.adapter.createToken(credential);
+      assertTokenRecord(
+        token,
+        `${providerDisplayName(binding.adapter.provider)} createToken returned an invalid token record`,
+      );
+      return token;
+    });
+  }
+
+  private loadFromStore(
+    key: TokenKey,
+    store: TokenStore,
+  ): Promise<TokenRecord | null> {
+    return this.observeLoad(key, async () => {
+      const token: unknown = await store.get(key);
+      if (token !== null) {
+        assertTokenRecord(token, "Token loaded from storage is invalid");
+      }
+      return token;
+    });
+  }
+
+  private async observeLoad(
+    key: TokenKey,
+    load: () => Promise<TokenRecord | null>,
+  ): Promise<TokenRecord | null> {
     const startedAt = this.now();
     this.emit({
       level: "debug",
@@ -281,10 +386,7 @@ export class TokenManager {
     });
 
     try {
-      const token: unknown = await this.store.get(key);
-      if (token !== null) {
-        assertTokenRecord(token, "Token loaded from storage is invalid");
-      }
+      const token = await load();
       this.emit({
         level: "debug",
         operation: "token.load",
@@ -299,7 +401,11 @@ export class TokenManager {
     }
   }
 
-  private async persist(key: TokenKey, token: unknown): Promise<void> {
+  private async persist(
+    key: TokenKey,
+    token: unknown,
+    store: TokenStore,
+  ): Promise<void> {
     const startedAt = this.now();
     this.emit({
       level: "debug",
@@ -310,7 +416,7 @@ export class TokenManager {
 
     try {
       assertTokenRecord(token, "Token is invalid before persistence");
-      await this.store.put(key, token);
+      await store.put(key, token);
       this.emit({
         level: "info",
         operation: "token.persist",
@@ -363,33 +469,34 @@ export class TokenManager {
         causeName: error instanceof Error ? error.name : typeof error,
       };
     }
-
     this.emit(event);
   }
 
   private emit(event: ConnectionsEvent): void {
-    if (!this.onEvent) {
-      return;
-    }
-
+    if (!this.onEvent) return;
     try {
       const result = (this.onEvent as (value: ConnectionsEvent) => unknown)(event);
-      if (result instanceof Promise) {
-        void result.catch(() => {});
-      }
+      if (result instanceof Promise) void result.catch(() => {});
     } catch (_) {
       // Observability must never affect token handling.
     }
   }
 
-  private getProvider(providerName: string): OAuthProvider {
-    const provider = this.providers.get(providerName);
+  private getBinding(provider: string): ProviderBinding {
+    const binding = this.bindings.get(provider);
+    if (!binding) throw new ProviderNotRegisteredError(provider);
+    return binding;
+  }
 
-    if (!provider) {
-      throw new OAuthProviderNotRegisteredError(providerName);
+  private getOAuthBinding(
+    provider: string,
+    capability: "authorizationUrl" | "exchangeCode",
+  ): OAuthProviderBinding {
+    const binding = this.getBinding(provider);
+    if (!isOAuthProvider(binding.adapter)) {
+      throw new ProviderCapabilityError(provider, capability);
     }
-
-    return provider;
+    return binding as OAuthProviderBinding;
   }
 }
 

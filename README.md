@@ -1,6 +1,6 @@
 # @indev42/connections
 
-Token management for app integrations using OAuth or manually provisioned static credentials. This package provides a small core `TokenManager`, provider adapters, and token stores for persisting access and refresh tokens.
+Token management for app integrations using OAuth or manually provisioned static credentials. This package provides a small core `TokenManager`, provider adapters, token stores, credential sources, and optional encryption.
 
 See [`CONTEXT.md`](./CONTEXT.md) for the domain language used for connections, providers, and token lifecycles.
 
@@ -12,7 +12,7 @@ Install the package:
 bun add @indev42/connections
 ```
 
-Create a manager with a store and provider:
+Create a manager with a provider binding. Each provider has its own store:
 
 ```ts
 import {
@@ -21,19 +21,23 @@ import {
   ZohoOAuthProvider,
 } from "@indev42/connections";
 
+const zoho = new ZohoOAuthProvider({
+  credentials: {
+    clientId: process.env.ZOHO_CLIENT_ID!,
+    clientSecret: process.env.ZOHO_CLIENT_SECRET!,
+  },
+  defaultScopes: ["ZohoCRM.modules.READ"],
+  accessType: "offline",
+  prompt: "consent",
+});
+
 const manager = new TokenManager({
-  store: new MemoryTokenStore(),
-  providers: [
-    new ZohoOAuthProvider({
-      credentials: {
-        clientId: process.env.ZOHO_CLIENT_ID!,
-        clientSecret: process.env.ZOHO_CLIENT_SECRET!,
-      },
-      defaultScopes: ["ZohoCRM.modules.READ"],
-      accessType: "offline",
-      prompt: "consent",
-    }),
-  ],
+  providers: {
+    zoho: {
+      adapter: zoho,
+      store: new MemoryTokenStore(),
+    },
+  },
 });
 
 const key = {
@@ -83,7 +87,7 @@ await manager.revoke(key);
 
 ## Core Concepts
 
-`TokenManager` coordinates providers and stores. It selects providers by `key.provider`, persists exchanged tokens, returns valid access tokens, refreshes expired tokens, deduplicates concurrent refreshes for the same token key, and deletes tokens on revoke.
+`TokenManager` coordinates provider bindings. It selects a binding by `key.provider`, uses that binding's store or credential source, returns valid access tokens, refreshes OAuth tokens, deduplicates concurrent refreshes for the same token key, and handles supported persistence and revocation operations.
 
 `TokenKey` identifies one saved connection:
 
@@ -117,50 +121,67 @@ The package validates this shape at provider, manager, serialization, and storag
 
 ### Static Tokens
 
-Use `saveToken` to manage a manually provisioned API token without registering an OAuth provider:
+Bind a static provider to a standard store when the application should manage the token record:
 
 ```ts
-const staticKey = {
-  provider: "service-api",
-  accountId: "tenant-1",
-};
+import {
+  bindStaticProvider,
+  EnvironmentCredentialSource,
+  MemoryTokenStore,
+  RetellAIProvider,
+  TokenManager,
+} from "@indev42/connections";
 
-await manager.saveToken({
-  key: staticKey,
-  token: {
-    accessToken: process.env.SERVICE_API_TOKEN!,
-    lifecycle: "static",
+const retell = new RetellAIProvider();
+const store = new MemoryTokenStore();
+const manager = new TokenManager({
+  providers: {
+    retell: bindStaticProvider(retell, { store }),
   },
+});
+
+const staticKey = { provider: "retell", accountId: "tenant-1" };
+
+await manager.saveCredential({
+  key: staticKey,
+  credential: process.env.RETELL_API_KEY!,
 });
 
 const accessToken = await manager.getValidAccessToken(staticKey);
 ```
 
-A static token can include `expiresAt`. It remains valid until that exact time, regardless of `refreshSkewMs`, and then retrieval throws `TokenExpiredError` with code `TOKEN_EXPIRED`. Static tokens are never refreshed. `saveInitialToken` remains available as a deprecated compatibility alias for `saveToken`.
+A static token can include `expiresAt`. It remains valid until that exact time, regardless of `refreshSkewMs`, and then retrieval throws `TokenExpiredError` with code `TOKEN_EXPIRED`. Static bindings never refresh. `saveToken` can persist an already normalized record, while `saveCredential` asks the static provider to normalize a raw credential before persistence. `saveInitialToken` remains available as a deprecated compatibility alias for `saveToken`.
 
-Static token providers can package a service credential with the correct lifecycle and token type. For example, Retell AI uses a dashboard-created API key as a bearer token:
+Use a credential source when a raw credential is managed outside this package. Environment variables contain only the raw value:
 
 ```ts
-import { RetellAIProvider } from "@indev42/connections/providers/retell";
+const manager = new TokenManager({
+  providers: {
+    retell: bindStaticProvider(new RetellAIProvider(), {
+      source: new EnvironmentCredentialSource({
+        key: "RETELL_API_KEY",
+        runtimeEnv: process.env,
+      }),
+    }),
+  },
+});
 
-const retell = new RetellAIProvider();
-const retellKey = {
-  provider: retell.provider,
+const apiKey = await manager.getValidAccessToken({
+  provider: "retell",
   accountId: "workspace-id",
-};
-
-await manager.saveToken({
-  key: retellKey,
-  token: retell.createToken(process.env.RETELL_API_KEY!),
 });
 ```
+
+The source returns the raw string and `RetellAIProvider` converts it to a static bearer `TokenRecord` in memory. Source-backed bindings are read-only: `saveToken`, `saveCredential`, and `revoke` are not supported because the manager cannot mutate the external source.
 
 ## TokenManager Configuration
 
 ```ts
 const manager = new TokenManager({
-  store,
-  providers: [zohoProvider],
+  providers: {
+    zoho: { adapter: zohoProvider, store: zohoStore },
+    salesforce: { adapter: salesforceProvider, store: salesforceStore },
+  },
   refreshSkewMs: 60_000,
   onEvent: (event) => observability.record(event),
 });
@@ -168,8 +189,7 @@ const manager = new TokenManager({
 
 Options:
 
-- `store`: required `TokenStore` implementation.
-- `providers`: optional list of `OAuthProvider` implementations. You can also register providers later with `manager.use(provider)`.
+- `providers`: provider-name map of bindings. OAuth bindings require an adapter and store. Static bindings use either a store or credential source. The map key must equal `adapter.provider`.
 - `refreshSkewMs`: how early to refresh expiring tokens. Defaults to `60_000`.
 - `now`: optional clock override, mainly for tests.
 - `onEvent`: optional structured callback for exchange, refresh, load, and persistence outcomes. Events contain sanitized diagnostics and never token values, authorization codes, client secrets, encrypted records, or response bodies. Callback failures are ignored so observability cannot interrupt token handling.
@@ -178,6 +198,7 @@ Common methods:
 
 - `getAuthorizationUrl({ key, redirectUri, scopes, state, metadata })`
 - `exchangeCodeAndSave({ key, code, redirectUri, metadata })`
+- `saveCredential({ key, credential })`
 - `saveToken({ key, token })`
 - `saveInitialToken({ key, token })`
 - `getValidToken(key, { metadata })`
@@ -186,7 +207,7 @@ Common methods:
 
 ## Providers
 
-Providers implement service-specific credential behavior. OAuth providers handle authorization URLs, code exchange, token refresh, and optional token revocation. Static token providers convert manually provisioned credentials into service-appropriate token records and do not need manager registration.
+Providers implement service-specific credential behavior. OAuth providers handle authorization URLs, code exchange, token refresh, and optional token revocation. Static token providers convert manually provisioned credentials into service-appropriate token records. Both are registered through provider bindings.
 
 | Provider | Import | Purpose |
 | --- | --- | --- |
@@ -212,6 +233,8 @@ More detailed provider usage can live in colocated provider README files under `
 
 Stores implement token persistence. All built-in stores use the shared token serialization and optional `TokenEncryption` flow.
 
+A store can be shared by multiple provider bindings or each provider can use a different store. Static and OAuth providers can both use standard stores.
+
 | Store | Import | Purpose |
 | --- | --- | --- |
 | Memory | `@indev42/connections/stores/memory` | In-memory token storage for tests, local development, and short-lived processes. |
@@ -229,6 +252,21 @@ import {
 ```
 
 Store-specific setup details can live in colocated store README files under `src/stores/<store>/README.md`. The Convex store includes `src/stores/convex/README.md` because it requires app-owned Convex schema and functions.
+
+## Credential Sources
+
+A `CredentialSource<T>` reads an externally managed raw credential. Unlike a `TokenStore`, it is read-only and does not return normalized token records. A static provider converts the source value to a `TokenRecord` when the manager loads it.
+
+`EnvironmentCredentialSource` supports a fixed environment key or a resolver based on `TokenKey`:
+
+```ts
+const source = new EnvironmentCredentialSource({
+  runtimeEnv: process.env,
+  key: (tokenKey) => `RETELL_API_KEY_${tokenKey.accountId}`,
+});
+```
+
+Environment values are returned unchanged. Missing values are treated as missing tokens.
 
 ## Token Encryption
 
@@ -318,7 +356,7 @@ class ExampleProvider implements OAuthProvider {
 }
 ```
 
-Provider methods receive OAuth request data and optional metadata. They do not receive the app's `TokenKey`; key ownership stays inside `TokenManager` and `TokenStore`.
+OAuth provider methods receive OAuth request data and optional metadata. They do not receive the app's `TokenKey`; key ownership stays inside `TokenManager` and the configured storage boundary.
 
 ## Custom Stores
 

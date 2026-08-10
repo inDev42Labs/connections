@@ -41,6 +41,32 @@ export class OAuthProviderNotRegisteredError extends ConnectionsError {
   }
 }
 
+export class ProviderNotRegisteredError extends ConnectionsError {
+  readonly code = "PROVIDER_NOT_REGISTERED";
+
+  constructor(readonly provider: string) {
+    super(`No provider is registered for '${provider}'`);
+  }
+}
+
+export type ProviderCapability =
+  | "authorizationUrl"
+  | "exchangeCode"
+  | "saveCredential"
+  | "saveToken"
+  | "revoke";
+
+export class ProviderCapabilityError extends ConnectionsError {
+  readonly code = "PROVIDER_CAPABILITY_UNAVAILABLE";
+
+  constructor(
+    readonly provider: string,
+    readonly capability: ProviderCapability,
+  ) {
+    super(`Provider '${provider}' does not support ${capability}`);
+  }
+}
+
 export type OAuthProviderErrorOptions = ErrorOptions & {
   status?: number;
   oauthErrorCode?: string;

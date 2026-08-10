@@ -3,12 +3,16 @@ import {
   InvalidTokenRecordError,
   MissingRefreshTokenError,
   OAuthProviderError,
-  OAuthProviderNotRegisteredError,
+  ProviderNotRegisteredError,
   TokenExpiredError,
   TokenNotFoundError,
 } from "./errors";
-import { TokenManager } from "./manager";
-import type { OAuthProvider } from "./provider";
+import type { ProviderBinding } from "./binding";
+import {
+  TokenManager as BoundTokenManager,
+  type TokenManagerOptions,
+} from "./manager";
+import type { OAuthProvider, StaticTokenProvider } from "./provider";
 import type { TokenStore } from "./store";
 import type { TokenKey, TokenRecord } from "./types";
 import { MemoryTokenStore } from "../stores/memory/MemoryTokenStore";
@@ -17,6 +21,32 @@ const key: TokenKey = {
   provider: "test",
   accountId: "account-1",
 };
+
+type TestTokenManagerOptions = Omit<TokenManagerOptions, "providers"> & {
+  store?: TokenStore;
+  providers?: Array<OAuthProvider | StaticTokenProvider>;
+};
+
+// Keep the existing lifecycle tests concise while routing through real bindings.
+class TokenManager extends BoundTokenManager {
+  private readonly testStore?: TokenStore;
+
+  constructor({ store, providers = [], ...options }: TestTokenManagerOptions) {
+    super({
+      ...options,
+      providers: Object.fromEntries(
+        providers.map((adapter) => [adapter.provider, { adapter, store }]),
+      ) as Record<string, ProviderBinding>,
+    });
+    this.testStore = store;
+  }
+
+  override use(binding: ProviderBinding | OAuthProvider): this {
+    if ("adapter" in binding) return super.use(binding);
+    if (!this.testStore) throw new TypeError("A test store is required");
+    return super.use({ adapter: binding, store: this.testStore });
+  }
+}
 
 describe("TokenManager", () => {
   it("returns the stored access token when it is not expired", async () => {
@@ -201,7 +231,7 @@ describe("TokenManager", () => {
     );
   });
 
-  it("throws OAuthProviderNotRegisteredError when no provider is registered for the token key", async () => {
+  it("throws ProviderNotRegisteredError when no provider is registered for the token key", async () => {
     const manager = new TokenManager({
       store: createStore({
         accessToken: "expired-access-token",
@@ -213,7 +243,7 @@ describe("TokenManager", () => {
     });
 
     await expect(manager.getValidAccessToken(key)).rejects.toBeInstanceOf(
-      OAuthProviderNotRegisteredError,
+      ProviderNotRegisteredError,
     );
   });
 
@@ -382,7 +412,7 @@ describe("TokenManager public OAuth flow", () => {
     );
   });
 
-  it("throws OAuthProviderNotRegisteredError when authorization URL provider is missing", async () => {
+  it("throws ProviderNotRegisteredError when authorization URL provider is missing", async () => {
     const manager = new TokenManager({ store: createStore() });
 
     await expect(
@@ -390,7 +420,7 @@ describe("TokenManager public OAuth flow", () => {
         key,
         redirectUri: "https://app.example/oauth/callback",
       }),
-    ).rejects.toBeInstanceOf(OAuthProviderNotRegisteredError);
+    ).rejects.toBeInstanceOf(ProviderNotRegisteredError);
   });
 
   it("exchanges an authorization code through the selected provider", async () => {
@@ -512,7 +542,7 @@ describe("TokenManager public OAuth flow", () => {
     });
   });
 
-  it("throws OAuthProviderNotRegisteredError when exchange provider is missing", async () => {
+  it("throws ProviderNotRegisteredError when exchange provider is missing", async () => {
     const manager = new TokenManager({ store: createStore() });
 
     await expect(
@@ -521,12 +551,15 @@ describe("TokenManager public OAuth flow", () => {
         code: "authorization-code",
         redirectUri: "https://app.example/oauth/callback",
       }),
-    ).rejects.toBeInstanceOf(OAuthProviderNotRegisteredError);
+    ).rejects.toBeInstanceOf(ProviderNotRegisteredError);
   });
 
   it("saves an initial token under the requested TokenKey", async () => {
     const store = createStore();
-    const manager = new TokenManager({ store });
+    const manager = new TokenManager({
+      store,
+      providers: [createStaticProvider()],
+    });
     const token: TokenRecord = {
       accessToken: "initial-access-token",
       refreshToken: "initial-refresh-token",
@@ -539,7 +572,10 @@ describe("TokenManager public OAuth flow", () => {
 
   it("saves a static token without a registered OAuth provider", async () => {
     const store = createStore();
-    const manager = new TokenManager({ store });
+    const manager = new TokenManager({
+      store,
+      providers: [createStaticProvider()],
+    });
     const token: TokenRecord = {
       accessToken: "static-access-token",
       lifecycle: "static",
@@ -553,7 +589,10 @@ describe("TokenManager public OAuth flow", () => {
   it("validates tokens passed to saveToken before persistence", async () => {
     const store = createStore();
     const put = vi.spyOn(store, "put");
-    const manager = new TokenManager({ store });
+    const manager = new TokenManager({
+      store,
+      providers: [createStaticProvider()],
+    });
 
     await expect(
       manager.saveToken({ key, token: {} as TokenRecord }),
@@ -690,7 +729,10 @@ describe("TokenManager refresh edge cases", () => {
       put: vi.fn(),
       delete: vi.fn(),
     };
-    const manager = new TokenManager({ store });
+    const manager = new TokenManager({
+      store,
+      providers: [createStaticProvider()],
+    });
 
     await expect(manager.getValidAccessToken(key)).rejects.toBeInstanceOf(
       InvalidTokenRecordError,
@@ -1012,6 +1054,16 @@ function createProvider(options: {
   }
 
   return provider;
+}
+
+function createStaticProvider(): StaticTokenProvider {
+  return {
+    provider: "test",
+    createToken: (credential) => ({
+      accessToken: credential,
+      lifecycle: "static",
+    }),
+  };
 }
 
 function deferred<T>(): {

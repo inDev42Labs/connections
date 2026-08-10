@@ -36,8 +36,8 @@ export interface OAuthProvider {
   revokeToken?(input: RevokeTokenInput): Promise<void>;
 }
 
-export interface StaticTokenProvider {
+export interface StaticTokenProvider<TCredential = string> {
   readonly provider: string;
 
-  createToken(accessToken: string): TokenRecord;
+  createToken(credential: TCredential): TokenRecord;
 }

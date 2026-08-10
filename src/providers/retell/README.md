@@ -12,22 +12,28 @@ Retell authentication documentation:
 
 ```ts
 import {
+  bindStaticProvider,
+  EnvironmentCredentialSource,
   MemoryTokenStore,
   RetellAIProvider,
   TokenManager,
 } from "@indev42/connections";
 
-const manager = new TokenManager({ store: new MemoryTokenStore() });
 const retell = new RetellAIProvider();
+const manager = new TokenManager({
+  providers: {
+    retell: bindStaticProvider(retell, {
+      source: new EnvironmentCredentialSource({
+        key: "RETELL_API_KEY",
+        runtimeEnv: process.env,
+      }),
+    }),
+  },
+});
 const key = {
   provider: retell.provider,
   accountId: "workspace-id",
 };
-
-await manager.saveToken({
-  key,
-  token: retell.createToken(process.env.RETELL_API_KEY!),
-});
 
 const apiKey = await manager.getValidAccessToken(key);
 await fetch("https://api.retellai.com/v2/list-calls", {
@@ -40,6 +46,19 @@ await fetch("https://api.retellai.com/v2/list-calls", {
 });
 ```
 
-Do not add the provider to `TokenManager.providers`. Static tokens need no authorization, exchange, refresh, or remote revocation adapter. `manager.revoke(key)` deletes the local record; delete or rotate the API key in Retell to invalidate it remotely.
+The environment variable contains only the raw API key. `EnvironmentCredentialSource` returns that value unchanged, and `RetellAIProvider` converts it to a static bearer token in memory. The source-backed binding is read-only; delete or rotate the environment value and the API key in Retell rather than calling `manager.revoke(key)`.
+
+To manage the token through a standard writable store instead, bind the provider to a `TokenStore` and call `saveCredential`:
+
+```ts
+const store = new MemoryTokenStore();
+const manager = new TokenManager({
+  providers: {
+    retell: bindStaticProvider(new RetellAIProvider(), { store }),
+  },
+});
+
+await manager.saveCredential({ key, credential: process.env.RETELL_API_KEY! });
+```
 
 Retell permissions are configured on the API key in the dashboard. They are not OAuth scopes and are therefore not copied into `TokenRecord.scopes`.

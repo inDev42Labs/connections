@@ -66,8 +66,9 @@ describe("DummyOAuthProvider", () => {
     const provider = new DummyOAuthProvider({ now: () => 1_000, expiresInMs: 1 });
     const store = new MemoryTokenStore();
     const manager = new TokenManager({
-      store,
-      providers: [provider],
+      providers: {
+        dummy: { adapter: provider, store },
+      },
       now: () => 2_000,
     });
     const key = { provider: "dummy", accountId: "account-1" };
