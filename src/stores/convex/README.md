@@ -18,12 +18,12 @@ const tokenStore = new ConvexTokenStore({
   functions: {
     get: api.oauthTokens.get,
     put: api.oauthTokens.put,
-    remove: api.oauthTokens.remove,
+    delete: api.oauthTokens.remove,
   },
 });
 ```
 
-The provided `client` must support Convex-style `query(functionReference, args)` and `mutation(functionReference, args)` calls.
+The provided `client` must support Convex-style `query(functionReference, args)` and `mutation(functionReference, args)` calls. The store requires the function-reference key to be named `delete`; the example Convex mutation is named `remove` because `delete` cannot be used as a JavaScript variable name.
 
 ## Convex Schema
 
@@ -151,7 +151,7 @@ const tokenStore = new ConvexTokenStore({
   functions: {
     get: api.oauthTokens.get,
     put: api.oauthTokens.put,
-    remove: api.oauthTokens.remove,
+    delete: api.oauthTokens.remove,
   },
   encryption,
 });
