@@ -2,8 +2,6 @@ name: CI
 
 on:
   pull_request:
-    branches:
-      - main
   push:
     branches:
       - main
@@ -12,20 +10,18 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  check:
+    name: Build and Pack
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -36,8 +32,11 @@ jobs:
       - name: Test
         run: bun run test
 
-      - name: Build
+      - name: Build and validate package
         run: bun run build
 
-      - name: Check npm package contents
-        run: npm pack --dry-run
+      - name: Verify package contents
+        run: bun run pack:dry-run
+
+      - name: Lint
+        run: bun run lint

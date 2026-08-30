@@ -1,4 +1,4 @@
-import { defineConfig } from "tsup";
+import { defineConfig } from "tsdown";
 
 export default defineConfig({
   entry: {
@@ -16,10 +16,16 @@ export default defineConfig({
     "stores/memory/index": "src/stores/memory/index.ts",
     "stores/neon/index": "src/stores/neon/index.ts",
   },
-  clean: true,
+  attw: {
+    level: "error",
+    profile: "esm-only",
+  },
   dts: true,
-  format: ["esm"],
+  exports: false,
+  fixedExtension: false,
+  format: "esm",
   platform: "neutral",
+  publint: true,
   sourcemap: true,
   target: "es2022",
 });
