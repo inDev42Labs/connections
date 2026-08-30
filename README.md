@@ -400,6 +400,16 @@ class CustomTokenStore implements TokenStore {
 
 Use `serializeTokenRecordForStorage`, `deserializeTokenRecordFromStorage`, and `serializeTokenKey` from `@indev42/connections/core` if you want custom stores to share the same serialization and encryption behavior as the built-in stores.
 
+## Agent Skill
+
+Install the `connections` skill to give supported coding agents integration guidance for OAuth, static credentials, stores, encryption, and extension interfaces:
+
+```sh
+npx skills add inDev42Labs/connections --skill connections
+```
+
+The skill is published from [`skills/connections`](./skills/connections) and follows the [Agent Skills](https://agentskills.io/) format.
+
 ## Development
 
 Run tests:
