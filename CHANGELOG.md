@@ -1,5 +1,11 @@
 # @indev42/connections
 
+## 1.0.1
+
+### Patch Changes
+
+- de5dd40: Migrate package builds to tsdown while preserving public entry points and publish releases through npm trusted publishing.
+
 ## 1.0.0
 
 ### Major Changes
