@@ -1,6 +1,6 @@
 {
   "name": "@indev42/connections",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "OAuth and static token management for app integrations.",
   "homepage": "https://github.com/inDev42Labs/connections#readme",
   "bugs": {
