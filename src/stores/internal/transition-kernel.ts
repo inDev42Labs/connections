@@ -1045,12 +1045,22 @@ export function transitionCredentialOperation(
     case 'RemoveConnection': {
       if (
         existing === null ||
-        existing.authorization._tag !== 'Authorized' ||
         existing.generation !== command.expectedGeneration ||
         existing.revision !== command.expectedRevision ||
         !Number.isFinite(command.removedAt)
       ) {
         return finish(command, conditionChanged)
+      }
+      if (
+        existing.authorization._tag === 'NotAuthorized' &&
+        existing.credentialOperation === null &&
+        existing.authorizationAttemptStateDigest === null
+      ) {
+        return finish(command, {
+          _tag: 'ConnectionRemoved',
+          generation: existing.generation,
+          revision: existing.revision,
+        })
       }
       const generation = existing.generation + 1
       const revision = existing.revision + 1

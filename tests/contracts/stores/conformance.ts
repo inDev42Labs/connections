@@ -2141,6 +2141,147 @@ export function credentialOperationStoreConformance<
     })
   })
 
+  test(`${name}: removal invalidates a prepared initial browser enrollment`, async () => {
+    const target = makeTarget()
+    const key = {
+      namespace: `${name}:remove-initial-browser`,
+      providerId: 'salesforce',
+      connectionId: 'connection',
+    }
+    const prepared = attempt(key, 'state:removed-enrollment')
+    await target.run(
+      target.store.execute(
+        await withRequest(
+          { _tag: 'CreateAuthorizationAttempt' as const, attempt: prepared },
+          'prepare',
+        ),
+      ),
+    )
+    const removal = await withRequest(
+      {
+        _tag: 'RemoveConnection' as const,
+        key,
+        expectedGeneration: 0,
+        expectedRevision: 1,
+        removedAt: 1_500,
+      },
+      'remove',
+    )
+    const removed = await target.run(target.store.executeCredentialOperation(removal))
+    expect(removed).toEqual({ _tag: 'ConnectionRemoved', generation: 1, revision: 2 })
+    expect(await target.run(target.store.executeCredentialOperation(removal))).toEqual(removed)
+    expect(
+      await target.run(
+        target.store.readAuthorizationAttempt({
+          namespace: key.namespace,
+          stateDigest: prepared.stateDigest,
+          bindingDigest: prepared.bindingDigest,
+          now: 1_600,
+        }),
+      ),
+    ).toBeNull()
+    expect(
+      await target.run(
+        target.store.execute(
+          await withRequest(
+            admissionInput({
+              stateDigest: prepared.stateDigest,
+              key,
+              intent: 'enroll',
+              generation: 0,
+              admissionId: 'stale-admission',
+              admittedAt: 1_600,
+              admissionExpiresAt: 31_600,
+            }),
+            'stale-admission',
+          ),
+        ),
+      ),
+    ).toEqual({ _tag: 'StoreConflict', reason: 'ConditionChanged' })
+    await authorizeConnection(target, key, { generation: 1, sequence: 'fresh', startedAt: 3_000 })
+    const fresh = await target.run(target.store.readConnection(key))
+    expect(fresh).toMatchObject({ generation: 1, authorization: { _tag: 'Authorized' } })
+    expect(await target.run(target.store.executeCredentialOperation(removal))).toEqual({
+      _tag: 'StoreConflict',
+      reason: 'ConditionChanged',
+    })
+    expect(await target.run(target.store.readConnection(key))).toEqual(fresh)
+  })
+
+  test.each([false, true])(
+    `${name}: removal fences initial Self Client enrollment before and after dispatch, dispatched: %s`,
+    async (dispatched) => {
+      const target = makeTarget()
+      const key = {
+        namespace: `${name}:remove-initial-self-client:${dispatched}`,
+        providerId: 'zoho',
+        connectionId: 'connection',
+      }
+      const { result: admitted } = await admitSelfClientExchange(target, key, {
+        intent: 'enroll',
+        generation: 0,
+        revision: 0,
+        operationId: 'removed-exchange',
+        ownershipFence: 'removed-fence',
+        acquiredAt: 1_000,
+      })
+      const revision = dispatched
+        ? (await reserveSelfClientDispatch(target, key, admitted, 1_010)).revision
+        : admitted.revision
+      const removed = await target.run(
+        target.store.executeCredentialOperation(
+          await withRequest(
+            {
+              _tag: 'RemoveConnection' as const,
+              key,
+              expectedGeneration: admitted.generation,
+              expectedRevision: revision,
+              removedAt: 1_020,
+            },
+            'remove',
+          ),
+        ),
+      )
+      expect(removed).toEqual({
+        _tag: 'ConnectionRemoved',
+        generation: 1,
+        revision: revision + 1,
+      })
+      expect(await target.run(target.store.readConnection(key))).toMatchObject({
+        authorization: { _tag: 'NotAuthorized' },
+        credentialEnvelope: null,
+        credentialOperation: null,
+      })
+      const late = await completeSelfClientExchange(target, key, admitted, revision, 1_030, 'late')
+      expect(late.result).toEqual({ _tag: 'StoreConflict', reason: 'ConditionChanged' })
+      const fresh = await admitSelfClientExchange(target, key, {
+        intent: 'enroll',
+        generation: 1,
+        revision: revision + 1,
+        operationId: 'fresh-exchange',
+        ownershipFence: 'fresh-fence',
+        acquiredAt: 2_000,
+      })
+      const reserved = await reserveSelfClientDispatch(target, key, fresh.result, 2_010)
+      const completed = await completeSelfClientExchange(
+        target,
+        key,
+        fresh.result,
+        reserved.revision,
+        2_020,
+        'fresh-completion',
+      )
+      expect(completed.result._tag).toBe('SelfClientExchangeCompleted')
+      const saved = await target.run(target.store.readConnection(key))
+      expect(saved).toMatchObject({ generation: 1, authorization: { _tag: 'Authorized' } })
+      expect(await target.run(target.store.executeCredentialOperation(late.command))).toEqual({
+        _tag: 'StoreConflict',
+        reason: 'ConditionChanged',
+      })
+      expect(await target.run(target.store.readConnection(key))).toEqual(saved)
+    },
+  )
+
   test(`${name}: removal tombstone fences stale work across deliberate reenrollment`, async () => {
     const target = makeTarget()
     const key = {

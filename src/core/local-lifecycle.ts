@@ -25,7 +25,7 @@ export function makeLocalLifecycle<Error, Requirements, InspectionError, Inspect
     remove: (identity: ConnectionIdentity): Effect.Effect<void, RemovalFailure, Requirements> =>
       Effect.gen(function* () {
         const current = yield* readForRemoval(identity)
-        if (current === null || current.authorization._tag === 'NotAuthorized') return
+        if (current === null) return
 
         const input = {
           _tag: 'RemoveConnection' as const,

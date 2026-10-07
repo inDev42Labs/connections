@@ -96,13 +96,18 @@ describe('local credential removal interface', () => {
     )
   })
 
-  test('is a no-op when local authorization is already absent', async () => {
+  test('leaves an already empty connection unchanged and skips nonexistent connections', async () => {
     const fixture = await makeFixture()
+    const key = { namespace: 'default', providerId: 'salesforce', connectionId: 'conn_acme' }
 
     await Effect.runPromise(fixture.connection.remove('conn_acme'))
+    const removed = fixture.store.unsafeReadConnection(key)
+    expect(removed).not.toBeNull()
+    await Effect.runPromise(fixture.connection.remove('conn_acme'))
+    expect(fixture.store.unsafeReadConnection(key)).toEqual(removed)
+
     const executionsAfterRemoval = fixture.store.diagnostics.executions
-    await Effect.runPromise(fixture.connection.remove('conn_acme'))
-
+    await Effect.runPromise(fixture.connection.remove('nonexistent'))
     expect(fixture.store.diagnostics.executions).toBe(executionsAfterRemoval)
     await expect(Effect.runPromise(fixture.connection.inspect('conn_acme'))).resolves.toMatchObject(
       {

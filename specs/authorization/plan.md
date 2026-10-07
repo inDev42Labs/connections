@@ -14,7 +14,7 @@ Support the [authorization target](spec.md) with mechanism-specific setup over s
 
 - AUTH-01 through AUTH-03: `tests/interface/promise-read.test.ts`, `tests/interface/api-key.test.ts`, and `tests/interface/client-credentials.test.ts` exercise strict intent and deferred acquisition.
 - AUTH-04, AUTH-05: `tests/interface/promise-provider-oauth.test.ts`, `tests/interface/promise-self-client.test.ts`, `tests/interface/authorization.test.ts`, and `tests/interface/self-client.test.ts` exercise public flows and pre-exchange checks.
-- AUTH-06: `tests/interface/replacement.test.ts`, `tests/lifecycle/client-credentials-replacement-removal.in-memory.test.ts`, and `tests/lifecycle/replacement-removal.in-memory.test.ts` cover races and uncertainty.
+- AUTH-06: `tests/interface/replacement.test.ts`, `tests/interface/enrollment-removal.test.ts`, `tests/lifecycle/client-credentials-replacement-removal.in-memory.test.ts`, and `tests/lifecycle/replacement-removal.in-memory.test.ts` cover races and uncertainty.
 - AUTH-07: `tests/interface/secret-safety.test.ts` and `tests/interface/authorization.test.ts` cover safe results and application authority.
 
 Run `bun run check`; provider transport tests under `tests/providers/` use controlled substitutes. Do not infer live provider configuration, production credentials, or deployment readiness from their success.
