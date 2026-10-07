@@ -17,7 +17,7 @@ app.use(connections, { name: 'connections' })
 export default app
 ```
 
-Install a compatible Convex version and run your application's Convex code generation. The mounted component appears as `components.connections` in the generated API. It owns private connection and operation data. Do not copy its tables into your application schema or expose its internal functions as browser routes. This adapter has been tested against a local Convex 1.45.0 backend, not a Convex cloud deployment.
+Install a compatible Convex version and run your application's Convex code generation. After a package update, regenerate the API and deploy the updated component with your app before using new lifecycle behavior. The mounted component appears as `components.connections` in the generated API. It owns private connection and operation data. Do not copy its tables into your application schema or expose its internal functions as browser routes. This adapter has been tested against a local Convex 1.45.0 backend, not a Convex cloud deployment.
 
 ## Configure a manager without capturing an action context
 

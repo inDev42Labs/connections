@@ -136,10 +136,20 @@ function credentialOperation(value: unknown): CredentialOperation {
       if (reason !== 'ProviderRejected' && reason !== 'ProviderFailure') {
         throw new TypeError('Invalid persisted record')
       }
+      const recovery = phaseValue.recovery
+      if (
+        recovery !== undefined &&
+        (recovery !== 'NotDispatched' ||
+          reason !== 'ProviderFailure' ||
+          (kind !== 'refresh' && kind !== 'client-credentials-acquisition'))
+      ) {
+        throw new TypeError('Invalid persisted record')
+      }
       phase = {
         _tag: 'KnownFailure',
         reason,
         failedAt: finiteNumber(phaseValue.failedAt),
+        ...(recovery === undefined ? {} : { recovery }),
       }
       break
     }

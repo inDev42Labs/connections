@@ -42,7 +42,7 @@ export type RenewableCredentialOutcome =
       }
     }
   | { readonly _tag: 'ProviderRejected' }
-  | { readonly _tag: 'ProviderFailure' }
+  | { readonly _tag: 'ProviderFailure'; readonly recovery?: 'NotDispatched' }
   | { readonly _tag: 'ProviderOutcomeUnknown' }
 
 function failureForCause(cause: OperationalCause): CredentialFailure {
@@ -198,6 +198,7 @@ export function makeRenewableCredentialWorkflow<
     ownershipFence: string,
     failedAt: number,
     reason: 'ProviderRejected' | 'ProviderFailure',
+    recovery?: 'NotDispatched',
   ): Effect.Effect<void, CredentialFailure, StoreRequirements> =>
     Effect.gen(function* () {
       const command = yield* credentialRequest({
@@ -209,6 +210,7 @@ export function makeRenewableCredentialWorkflow<
         ownershipFence,
         failedAt,
         reason,
+        ...(recovery === undefined ? {} : { recovery }),
       })
       const result = yield* executeCredentialOperation(command)
       if (result._tag !== 'CredentialOperationFailed') {
@@ -273,7 +275,13 @@ export function makeRenewableCredentialWorkflow<
         return yield* projectCredentialSnapshot(key, snapshot)
       }
 
-      if (operation?.phase._tag === 'KnownFailure') {
+      if (
+        operation?.phase._tag === 'KnownFailure' &&
+        !(
+          operation.phase.reason === 'ProviderFailure' &&
+          operation.phase.recovery === 'NotDispatched'
+        )
+      ) {
         return yield* Effect.fail(
           failureForCause(
             operation.phase.reason === 'ProviderRejected'
@@ -415,6 +423,7 @@ export function makeRenewableCredentialWorkflow<
           acquired.operation.phase.ownershipFence,
           yield* Clock.currentTimeMillis,
           refresh._tag,
+          refresh._tag === 'ProviderFailure' ? refresh.recovery : undefined,
         )
         return yield* Effect.fail(
           failureForCause(

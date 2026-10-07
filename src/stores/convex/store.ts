@@ -428,6 +428,7 @@ export function store<Visibility extends FunctionVisibility, EncryptorError, Enc
               ownershipFence: command.ownershipFence,
               failedAt: command.failedAt,
               reason: command.reason,
+              ...(command.recovery === undefined ? {} : { recovery: command.recovery }),
             }),
           )
         case 'MarkCredentialOperationIntervention':

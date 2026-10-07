@@ -86,6 +86,6 @@ The current adapter makes at most three refresh attempts after transport failure
 
 A refresh HTTP 401 or locally expired refresh token reports `AuthorizationRequired`. Exhausted transport, throttling, or server-error retries report `InterventionRequired`. Other refresh failures can report `TemporarilyUnavailable`. See [retrieval failures](../reference.md#handle-retrieval-failures) for the shared categories.
 
-Retained known failures and uncertain outcomes currently block later acquisition attempts. Do not assume that another credential read resumes refresh after the underlying condition is repaired. Investigate the failure or offer deliberate reauthorization. Provider-specific recovery improvements are tracked separately from this setup guide.
+A refresh failure proven to occur before remote dispatch can resume on a later credential read after you repair configuration. Known failures without that evidence and uncertain outcomes still block later acquisition attempts, including failures saved before no-dispatch evidence was supported. Investigate those failures or offer deliberate reauthorization. Recovery after exhausted remote retries remains separate from pre-dispatch configuration recovery.
 
 The examples and adapter tests use local substitutes. They do not establish live-shop verification.

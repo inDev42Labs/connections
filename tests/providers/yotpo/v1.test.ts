@@ -110,7 +110,7 @@ describe('Yotpo UGC API V1', () => {
         now: 0,
       }),
     )
-    expect(outcome).toEqual({ _tag: 'ProviderFailure' })
+    expect(outcome).toEqual({ _tag: 'ProviderOutcomeUnknown' })
   })
 
   test('preserves timeout and transport uncertainty rather than replaying', async () => {

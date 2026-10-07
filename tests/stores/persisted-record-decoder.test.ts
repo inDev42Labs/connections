@@ -30,6 +30,71 @@ test('decodes an older authorized record without acquisition metadata', () => {
   })
 })
 
+function failedConnection(recovery?: unknown, reason = 'ProviderFailure', kind = 'refresh') {
+  return JSON.stringify({
+    schemaVersion: 1,
+    key: { namespace: 'test', providerId: 'provider', connectionId: 'connection' },
+    generation: 0,
+    revision: 4,
+    authorization: { _tag: 'Authorized', credentialExpiresAt: 0 },
+    credentialEnvelope: {
+      version: 1,
+      algorithm: 'AES-256-GCM',
+      keyId: 'key',
+      iv: 'iv',
+      ciphertext: 'ciphertext',
+    },
+    credentialOperation: {
+      schemaVersion: 1,
+      operationId: 'failed-operation',
+      kind,
+      generation: 0,
+      observedRevision: 1,
+      startedAt: 1_000,
+      recoveryDeadline: 2_000,
+      transferCount: 0,
+      transferLimit: 1,
+      phase: {
+        _tag: 'KnownFailure',
+        reason,
+        failedAt: 1_100,
+        ...(recovery === undefined ? {} : { recovery }),
+      },
+    },
+    authorizationAttemptStateDigest: null,
+  })
+}
+
+test('preserves old known failures without inventing no-dispatch evidence', () => {
+  expect(decodeConnectionJson(failedConnection()).credentialOperation?.phase).toEqual({
+    _tag: 'KnownFailure',
+    reason: 'ProviderFailure',
+    failedAt: 1_100,
+  })
+})
+
+test('preserves explicit no-dispatch evidence across persistence decoding', () => {
+  expect(
+    decodeConnectionJson(failedConnection('NotDispatched')).credentialOperation?.phase,
+  ).toEqual({
+    _tag: 'KnownFailure',
+    reason: 'ProviderFailure',
+    failedAt: 1_100,
+    recovery: 'NotDispatched',
+  })
+})
+
+test.each([
+  ['ReplaySafe', 'ProviderFailure', 'refresh'],
+  [true, 'ProviderFailure', 'refresh'],
+  ['NotDispatched', 'ProviderRejected', 'refresh'],
+  ['NotDispatched', 'ProviderFailure', 'authorization-exchange'],
+])('rejects invalid recovery evidence %s for %s in %s', (recovery, reason, kind) => {
+  expect(() =>
+    decodeConnectionJson(failedConnection(recovery, String(reason), String(kind))),
+  ).toThrow('Invalid persisted record')
+})
+
 test('rejects malformed acquisition metadata', () => {
   expect(() =>
     decodeConnectionJson(

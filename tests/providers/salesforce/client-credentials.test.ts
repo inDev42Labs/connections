@@ -167,12 +167,12 @@ describe('Salesforce client credentials', () => {
     { ...token, access_token: '' },
     { ...token, expires_in: 0 },
     { ...token, issued_at: 'bad' },
-  ])('rejects malformed token responses', async (body) => {
-    expect((await acquire(json(body))).outcome).toEqual({ _tag: 'ProviderFailure' })
+  ])('retains uncertainty for malformed token responses', async (body) => {
+    expect((await acquire(json(body))).outcome).toEqual({ _tag: 'ProviderOutcomeUnknown' })
   })
 
-  test('rejects malformed JSON', async () => {
-    expect((await acquire(new Response('{'))).outcome).toEqual({ _tag: 'ProviderFailure' })
+  test('retains uncertainty for malformed JSON', async () => {
+    expect((await acquire(new Response('{'))).outcome).toEqual({ _tag: 'ProviderOutcomeUnknown' })
   })
 
   test.each([
@@ -188,7 +188,7 @@ describe('Salesforce client credentials', () => {
     const prepared = await Effect.runPromise(provider.prepareClientCredentials(source))
     expect(
       await Effect.runPromise(provider.acquireCredentials({ ...prepared, now: 1000 })),
-    ).toEqual({ _tag: 'ProviderFailure' })
+    ).toEqual({ _tag: 'ProviderFailure', recovery: 'NotDispatched' })
     expect(fetch).not.toHaveBeenCalled()
   })
 

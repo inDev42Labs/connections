@@ -100,6 +100,7 @@ const credentialOperationFields = {
       _tag: v.literal('KnownFailure'),
       reason: v.union(v.literal('ProviderRejected'), v.literal('ProviderFailure')),
       failedAt: v.number(),
+      recovery: v.optional(v.literal('NotDispatched')),
     }),
     v.object({
       _tag: v.literal('InterventionRequired'),

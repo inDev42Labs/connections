@@ -38,6 +38,7 @@ export type CredentialOperationPhase =
       readonly _tag: 'KnownFailure'
       readonly reason: 'ProviderRejected' | 'ProviderFailure'
       readonly failedAt: number
+      readonly recovery?: 'NotDispatched'
     }
   | {
       readonly _tag: 'InterventionRequired'
@@ -276,6 +277,7 @@ export interface RecordCredentialOperationFailureCommand {
   readonly ownershipFence: string
   readonly failedAt: number
   readonly reason: 'ProviderRejected' | 'ProviderFailure'
+  readonly recovery?: 'NotDispatched'
 }
 
 export interface MarkCredentialOperationInterventionCommand {

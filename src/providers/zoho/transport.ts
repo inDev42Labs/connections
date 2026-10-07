@@ -412,9 +412,11 @@ function refreshCredentials<Requirements>(
         Effect.succeed<ProviderRefreshOutcome>(
           failure.reason === 'ProviderRejected'
             ? { _tag: 'ProviderRejected' }
-            : failure.reason === 'TransportFailure'
+            : failure.reason === 'TransportFailure' || failure.reason === 'MalformedResponse'
               ? { _tag: 'ProviderOutcomeUnknown' }
-              : { _tag: 'ProviderFailure' },
+              : failure.reason === 'InvalidConfiguration'
+                ? { _tag: 'ProviderFailure', recovery: 'NotDispatched' }
+                : { _tag: 'ProviderFailure' },
         ),
     }),
   )

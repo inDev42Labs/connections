@@ -256,7 +256,7 @@ describe('credential outcomes', () => {
     }
   })
 
-  test('reports a malformed known provider response as a provider failure', async () => {
+  test('preserves uncertainty when a refresh response cannot establish usable credentials', async () => {
     const fixture = await makeFixture({
       refresh: [
         {
@@ -274,8 +274,8 @@ describe('credential outcomes', () => {
       )
 
       expect(outcomeTags(failure)).toEqual({
-        outcome: 'TemporarilyUnavailable',
-        cause: 'ProviderFailure',
+        outcome: 'InterventionRequired',
+        cause: 'ProviderOutcomeUnknown',
       })
     } finally {
       await fixture.driver.dispose()

@@ -52,7 +52,7 @@ export type ProviderRefreshOutcome =
       readonly credentials: ProviderCredentialSet
     }
   | { readonly _tag: 'ProviderRejected' }
-  | { readonly _tag: 'ProviderFailure' }
+  | { readonly _tag: 'ProviderFailure'; readonly recovery?: 'NotDispatched' }
   | { readonly _tag: 'ProviderOutcomeUnknown' }
 
 export interface PreparedClientCredentials {
@@ -67,7 +67,7 @@ export interface ClientCredentialsAcquisitionInput {
 export type ProviderClientCredentialsOutcome =
   | { readonly _tag: 'Acquired'; readonly credentials: ProviderCredentialSet }
   | { readonly _tag: 'ProviderRejected' }
-  | { readonly _tag: 'ProviderFailure' }
+  | { readonly _tag: 'ProviderFailure'; readonly recovery?: 'NotDispatched' }
   | { readonly _tag: 'ProviderOutcomeUnknown' }
 
 export interface ClientCredentialsProviderDefinition<

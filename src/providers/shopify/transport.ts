@@ -399,16 +399,12 @@ function refreshTokenPost(
       onFailure: (failure) =>
         failure.reason === 'TransportFailure' && attemptsRemaining > 1
           ? refreshTokenPost(url, body, shopDomain, scopes, now, attemptsRemaining - 1)
-          : Effect.succeed<ProviderRefreshOutcome>(
-              failure.reason === 'TransportFailure'
-                ? { _tag: 'ProviderOutcomeUnknown' }
-                : { _tag: 'ProviderFailure' },
-            ),
+          : Effect.succeed<ProviderRefreshOutcome>({ _tag: 'ProviderOutcomeUnknown' }),
       onSuccess: (response): Effect.Effect<ProviderRefreshOutcome> => {
         if (response._tag === 'Success') {
           return parseTokenResponse(response.body, shopDomain, scopes, now).pipe(
             Effect.match({
-              onFailure: (): ProviderRefreshOutcome => ({ _tag: 'ProviderFailure' }),
+              onFailure: (): ProviderRefreshOutcome => ({ _tag: 'ProviderOutcomeUnknown' }),
               onSuccess: (credentials): ProviderRefreshOutcome => ({
                 _tag: 'Refreshed',
                 credentials,
@@ -467,7 +463,12 @@ function refreshCredentials<Requirements>(
       )
     }),
     Effect.matchEffect({
-      onFailure: () => Effect.succeed({ _tag: 'ProviderFailure' as const }),
+      onFailure: (failure) =>
+        Effect.succeed<ProviderRefreshOutcome>(
+          failure.reason === 'InvalidConfiguration' || failure.reason === 'InvalidStoredCredentials'
+            ? { _tag: 'ProviderFailure', recovery: 'NotDispatched' }
+            : { _tag: 'ProviderFailure' },
+        ),
       onSuccess: Effect.succeed,
     }),
   )

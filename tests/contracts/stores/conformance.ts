@@ -1669,6 +1669,99 @@ export function credentialOperationStoreConformance<
     })
   })
 
+  test.each([undefined, 'NotDispatched'] as const)(
+    `${name}: only evidenced pre-dispatch failures admit one fresh recovery owner, evidence: %s`,
+    async (recovery) => {
+      const target = makeTarget()
+      const key = {
+        namespace: `${name}:failure-recovery:${recovery}`,
+        providerId: 'salesforce',
+        connectionId: 'connection',
+      }
+      const acquired = await acquireRefreshOperation(target, key, 'original')
+      if (acquired.operation.phase._tag !== 'OwnedBeforeDispatch')
+        throw new Error('Expected ownership')
+      const reserved = await reserveRefreshDispatch(target, key, acquired)
+      const failureInput = {
+        _tag: 'RecordCredentialOperationFailure' as const,
+        key,
+        expectedGeneration: reserved.generation,
+        expectedRevision: reserved.revision,
+        operationId: acquired.operation.operationId,
+        ownershipFence: acquired.operation.phase.ownershipFence,
+        failedAt: 2_060,
+        reason: 'ProviderFailure' as const,
+        ...(recovery === undefined ? {} : { recovery }),
+      }
+      const command = await withRequest(failureInput, 'record-failure')
+      const failed = await target.run(target.store.executeCredentialOperation(command))
+      if (failed._tag !== 'CredentialOperationFailed') throw new Error('Expected failure recording')
+      expect(await target.run(target.store.executeCredentialOperation(command))).toEqual(failed)
+      // The original operation's recovery deadline has elapsed. No-dispatch evidence
+      // justifies a fresh attempt, not transfer of possibly dispatched work.
+      const results = await Promise.all(
+        ['first-retry', 'second-retry'].map(async (owner) =>
+          target.run(
+            target.store.executeCredentialOperation(
+              await withRequest(acquisitionInput(key, failed.revision, owner, 200_000), owner),
+            ),
+          ),
+        ),
+      )
+      expect(
+        results.filter((result) => result._tag === 'CredentialOperationAcquired'),
+      ).toHaveLength(recovery === 'NotDispatched' ? 1 : 0)
+      expect(results.filter((result) => result._tag === 'StoreConflict')).toHaveLength(
+        recovery === 'NotDispatched' ? 1 : 2,
+      )
+      const saved = await target.run(target.store.readConnection(key))
+      expect(saved?.credentialOperation?.phase._tag).toBe(
+        recovery === 'NotDispatched' ? 'OwnedBeforeDispatch' : 'KnownFailure',
+      )
+      const staleFailure = await withRequest(failureInput, 'stale-failure')
+      expect(await target.run(target.store.executeCredentialOperation(staleFailure))).toEqual({
+        _tag: 'StoreConflict',
+        reason: 'ConditionChanged',
+      })
+      expect(await target.run(target.store.readConnection(key))).toEqual(saved)
+    },
+  )
+
+  test(`${name}: rejects recovery evidence attached to authorization rejection`, async () => {
+    const target = makeTarget()
+    const key = {
+      namespace: `${name}:invalid-recovery-evidence`,
+      providerId: 'salesforce',
+      connectionId: 'connection',
+    }
+    const acquired = await acquireRefreshOperation(target, key, 'invalid-evidence')
+    if (acquired.operation.phase._tag !== 'OwnedBeforeDispatch')
+      throw new Error('Expected ownership')
+    const reserved = await reserveRefreshDispatch(target, key, acquired)
+    const before = await target.run(target.store.readConnection(key))
+    expect(
+      await target.run(
+        target.store.executeCredentialOperation(
+          await withRequest(
+            {
+              _tag: 'RecordCredentialOperationFailure' as const,
+              key,
+              expectedGeneration: reserved.generation,
+              expectedRevision: reserved.revision,
+              operationId: acquired.operation.operationId,
+              ownershipFence: acquired.operation.phase.ownershipFence,
+              failedAt: 2_060,
+              reason: 'ProviderRejected',
+              recovery: 'NotDispatched',
+            },
+            'invalid-evidence',
+          ),
+        ),
+      ),
+    ).toEqual({ _tag: 'StoreConflict', reason: 'ConditionChanged' })
+    expect(await target.run(target.store.readConnection(key))).toEqual(before)
+  })
+
   test(`${name}: records known failures only for the matching dispatch owner`, async () => {
     for (const reason of ['ProviderRejected', 'ProviderFailure'] as const) {
       const target = makeTarget()

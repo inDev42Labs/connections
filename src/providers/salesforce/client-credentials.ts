@@ -4,7 +4,7 @@ import type {
   ClientCredentialsProviderDefinition,
   ProviderClientCredentialsOutcome,
 } from '../../core/contracts/provider.js'
-import { MalformedJsonResponse, readBoundedJsonResponse } from '../internal/http.js'
+import { readBoundedJsonResponse } from '../internal/http.js'
 import { configuredUrl, type SalesforceText } from './transport.js'
 import type { SalesforceCredentials } from './responses.js'
 import {
@@ -46,7 +46,10 @@ function acquireCredentials<Requirements>(
         loginUrl.hostname === 'login.salesforce.com' ||
         loginUrl.hostname === 'test.salesforce.com'
       )
-        return Effect.succeed<ProviderClientCredentialsOutcome>({ _tag: 'ProviderFailure' })
+        return Effect.succeed<ProviderClientCredentialsOutcome>({
+          _tag: 'ProviderFailure',
+          recovery: 'NotDispatched',
+        })
       return Effect.tryPromise({
         try: async (
           effectSignal,
@@ -96,7 +99,9 @@ function acquireCredentials<Requirements>(
             ? Effect.succeed(response)
             : parseTokenResponse(response.body, previous, input.now).pipe(
                 Effect.match({
-                  onFailure: (): ProviderClientCredentialsOutcome => ({ _tag: 'ProviderFailure' }),
+                  onFailure: (): ProviderClientCredentialsOutcome => ({
+                    _tag: 'ProviderOutcomeUnknown',
+                  }),
                   onSuccess: (credentials): ProviderClientCredentialsOutcome => ({
                     _tag: 'Acquired',
                     credentials,
@@ -104,17 +109,16 @@ function acquireCredentials<Requirements>(
                 }),
               ),
         ),
-        Effect.catch((error) =>
-          Effect.succeed<ProviderClientCredentialsOutcome>(
-            error instanceof MalformedJsonResponse
-              ? { _tag: 'ProviderFailure' }
-              : { _tag: 'ProviderOutcomeUnknown' },
-          ),
+        Effect.catch(() =>
+          Effect.succeed<ProviderClientCredentialsOutcome>({ _tag: 'ProviderOutcomeUnknown' }),
         ),
       )
     }),
     Effect.catch(() =>
-      Effect.succeed<ProviderClientCredentialsOutcome>({ _tag: 'ProviderFailure' }),
+      Effect.succeed<ProviderClientCredentialsOutcome>({
+        _tag: 'ProviderFailure',
+        recovery: 'NotDispatched',
+      }),
     ),
   )
 }

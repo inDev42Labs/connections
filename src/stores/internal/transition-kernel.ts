@@ -116,7 +116,8 @@ function phaseMatches(
       return (
         right._tag === 'KnownFailure' &&
         left.reason === right.reason &&
-        left.failedAt === right.failedAt
+        left.failedAt === right.failedAt &&
+        left.recovery === right.recovery
       )
     case 'InterventionRequired':
       return (
@@ -253,7 +254,8 @@ function receiptIsCurrent(
         result._tag === 'CredentialOperationFailed' &&
         operation?.operationId === command.operationId &&
         operation.phase._tag === 'KnownFailure' &&
-        operation.phase.reason === command.reason
+        operation.phase.reason === command.reason &&
+        operation.phase.recovery === command.recovery
       )
     case 'MarkCredentialOperationIntervention':
       return (
@@ -765,8 +767,14 @@ export function transitionCredentialOperation(
         return finish(command, conditionChanged)
       }
 
+      const recoverableFailure =
+        operation?.phase._tag === 'KnownFailure' &&
+        operation.phase.reason === 'ProviderFailure' &&
+        operation.phase.recovery === 'NotDispatched' &&
+        operation.kind === command.proposal.kind &&
+        operation.generation === existing.generation
       let acquired: CredentialOperation
-      if (operation === null) {
+      if (operation === null || recoverableFailure) {
         if (
           (command.proposal.kind !== 'refresh' &&
             command.proposal.kind !== 'client-credentials-acquisition') ||
@@ -924,7 +932,11 @@ export function transitionCredentialOperation(
         operation.operationId !== command.operationId ||
         operation.phase._tag !== 'DispatchPossible' ||
         operation.phase.ownershipFence !== command.ownershipFence ||
-        !Number.isFinite(command.failedAt)
+        !Number.isFinite(command.failedAt) ||
+        (command.recovery !== undefined &&
+          (command.recovery !== 'NotDispatched' ||
+            command.reason !== 'ProviderFailure' ||
+            (operation.kind !== 'refresh' && operation.kind !== 'client-credentials-acquisition')))
       ) {
         return finish(command, conditionChanged)
       }
@@ -947,6 +959,7 @@ export function transitionCredentialOperation(
                 _tag: 'KnownFailure',
                 reason: command.reason,
                 failedAt: command.failedAt,
+                ...(command.recovery === undefined ? {} : { recovery: command.recovery }),
               },
             },
           },

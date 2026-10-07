@@ -103,6 +103,7 @@ const failureArgs = {
   ownershipFence: v.string(),
   failedAt: v.number(),
   reason: knownFailureReasonValidator,
+  recovery: v.optional(v.literal('NotDispatched')),
 }
 
 const interventionArgs = {

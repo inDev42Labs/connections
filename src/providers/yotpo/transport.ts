@@ -4,7 +4,7 @@ import type {
   ClientCredentialsProviderDefinition,
   ProviderClientCredentialsOutcome,
 } from '../../core/contracts/provider.js'
-import { MalformedJsonResponse, readBoundedJsonResponse } from '../internal/http.js'
+import { readBoundedJsonResponse } from '../internal/http.js'
 import {
   parseStoredCredentials,
   parseTokenResponse,
@@ -84,17 +84,13 @@ function acquireCredentials(
     }),
   ).pipe(
     Effect.matchEffect({
-      onFailure: (error) =>
-        Effect.succeed<ProviderClientCredentialsOutcome>(
-          error instanceof MalformedJsonResponse
-            ? { _tag: 'ProviderFailure' }
-            : { _tag: 'ProviderOutcomeUnknown' },
-        ),
+      onFailure: () =>
+        Effect.succeed<ProviderClientCredentialsOutcome>({ _tag: 'ProviderOutcomeUnknown' }),
       onSuccess: (response) => {
         if (response._tag === 'HttpFailure') return Effect.succeed(httpFailure(response.status))
         return parseTokenResponse(response.body, previous).pipe(
           Effect.match({
-            onFailure: (): ProviderClientCredentialsOutcome => ({ _tag: 'ProviderFailure' }),
+            onFailure: (): ProviderClientCredentialsOutcome => ({ _tag: 'ProviderOutcomeUnknown' }),
             onSuccess: (credentials): ProviderClientCredentialsOutcome => ({
               _tag: 'Acquired',
               credentials,

@@ -68,6 +68,8 @@ Promise credential reads reject with one of these actionable categories:
 
 An absent authorization or known provider rejection maps to `AuthorizationRequired`. Pending renewal, provider failure, or storage failure maps to `TemporarilyUnavailable`. An uncertain provider outcome, encryption failure, or conflict maps to `InterventionRequired`. No interface can guarantee a provider will accept a credential after it has been returned. Report a confirmed rejection from your own provider request through `credentialUse(id).reportRejected()`; Connections does not retry that request.
 
+A later credential read may start one fresh acquisition after a retained renewal failure proven to occur before remote dispatch. Repair the underlying configuration first. This recovery does not add an automatic network retry loop within the read. Known failures without no-dispatch evidence, including older saved failures, remain retained; investigate them or deliberately replace authorization rather than assuming another read will recover them.
+
 A lost response after an OAuth code exchange or refresh does not prove the provider left the code or refresh token unused. Connections may require intervention rather than blindly replay a potentially consumed request.
 
 Setup, replacement, inspection, rejection reporting, and removal have their own failure types. Application-supplied authorization callbacks can also fail; Connections does not make application permission decisions. These failures must not leak secret values. See the exported failure types for their current reason values.
