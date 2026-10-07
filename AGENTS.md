@@ -14,11 +14,11 @@ Use the `project-documentation` system when creating or migrating project artifa
 
 Update the semantic owner and affected links when a claim changes. Specs must follow `docs/`, never silently redefine them. Keep historical versions in Git. `experiments/` contains isolated historical evidence, not production code or an API contract. Read an experiment only to answer its named design question; implement and verify through `src/` and `tests/`, without importing experiment modules.
 
-## Protect the target docs
+## Approve material behavior changes
 
-Do not edit `docs/` without the owner's explicit approval. The sole exception is removing a target-not-implemented disclaimer after the entire behavior it covers is implemented and verified. Do not remove a page-wide disclaimer while any covered interface remains unimplemented.
+Obtain owner approval before materially changing the public interface or library functionality. Routine documentation corrections, updates, and additions for approved stores or providers do not require separate approval. Keep them consistent with accepted behavior and verify their claims. Remove a target-not-implemented disclaimer only after the entire behavior it covers is implemented and verified. Do not remove a page-wide disclaimer while any covered interface remains unimplemented.
 
-If work reveals a conflict, omission, or needed target change, stop the affected work and ask the owner. Do not edit docs or silently change implementation to resolve it. Apply these restrictions to delegated work as well.
+If work reveals a conflict or requires a material target change, stop the affected work and ask the owner. Do not silently redefine behavior through documentation or implementation. Apply these boundaries to delegated work as well.
 
 ## Verify within scope
 
