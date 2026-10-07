@@ -75,6 +75,11 @@ export const credentialOperationProposalValidator = v.object({
   transferLimit: v.number(),
 })
 
+export const credentialFailureRecoveryValidator = v.union(
+  v.literal('NotDispatched'),
+  v.object({ _tag: v.literal('ReplaySafe'), retryUntil: v.number(), retryAt: v.number() }),
+)
+
 const credentialOperationFields = {
   schemaVersion: componentSchemaVersionValidator,
   operationId: v.string(),
@@ -84,6 +89,7 @@ const credentialOperationFields = {
   recoveryDeadline: v.number(),
   transferCount: v.number(),
   transferLimit: v.number(),
+  replayUntil: v.optional(v.number()),
   phase: v.union(
     v.object({
       _tag: v.literal('OwnedBeforeDispatch'),
@@ -100,7 +106,7 @@ const credentialOperationFields = {
       _tag: v.literal('KnownFailure'),
       reason: v.union(v.literal('ProviderRejected'), v.literal('ProviderFailure')),
       failedAt: v.number(),
-      recovery: v.optional(v.literal('NotDispatched')),
+      recovery: v.optional(credentialFailureRecoveryValidator),
     }),
     v.object({
       _tag: v.literal('InterventionRequired'),

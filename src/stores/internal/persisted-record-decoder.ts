@@ -136,14 +136,29 @@ function credentialOperation(value: unknown): CredentialOperation {
       if (reason !== 'ProviderRejected' && reason !== 'ProviderFailure') {
         throw new TypeError('Invalid persisted record')
       }
-      const recovery = phaseValue.recovery
-      if (
-        recovery !== undefined &&
-        (recovery !== 'NotDispatched' ||
-          reason !== 'ProviderFailure' ||
-          (kind !== 'refresh' && kind !== 'client-credentials-acquisition'))
-      ) {
-        throw new TypeError('Invalid persisted record')
+      let recovery: import('../../core/contracts/recovery.js').CredentialFailureRecovery | undefined
+      if (phaseValue.recovery !== undefined) {
+        if (reason !== 'ProviderFailure') throw new TypeError('Invalid persisted record')
+        if (phaseValue.recovery === 'NotDispatched') {
+          if (kind !== 'refresh' && kind !== 'client-credentials-acquisition')
+            throw new TypeError('Invalid persisted record')
+          recovery = 'NotDispatched'
+        } else {
+          const evidence = record(phaseValue.recovery)
+          if (kind !== 'refresh' || evidence._tag !== 'ReplaySafe')
+            throw new TypeError('Invalid persisted record')
+          recovery = {
+            _tag: 'ReplaySafe',
+            retryUntil: finiteNumber(evidence.retryUntil),
+            retryAt: finiteNumber(evidence.retryAt),
+          }
+          if (
+            recovery.retryAt < 0 ||
+            recovery.retryAt > recovery.retryUntil ||
+            recovery.retryUntil <= finiteNumber(phaseValue.failedAt)
+          )
+            throw new TypeError('Invalid persisted record')
+        }
       }
       phase = {
         _tag: 'KnownFailure',
@@ -182,6 +197,9 @@ function credentialOperation(value: unknown): CredentialOperation {
     recoveryDeadline: finiteNumber(candidate.recoveryDeadline),
     transferCount: nonNegativeInteger(candidate.transferCount),
     transferLimit: nonNegativeInteger(candidate.transferLimit),
+    ...(candidate.replayUntil === undefined
+      ? {}
+      : { replayUntil: finiteNumber(candidate.replayUntil) }),
     phase,
   }
   let operation: CredentialOperation
@@ -195,7 +213,11 @@ function credentialOperation(value: unknown): CredentialOperation {
   }
   if (
     operation.recoveryDeadline <= operation.startedAt ||
-    operation.transferCount > operation.transferLimit
+    operation.transferCount > operation.transferLimit ||
+    (operation.replayUntil !== undefined && (kind !== 'refresh' || operation.replayUntil < 0)) ||
+    (phase._tag === 'KnownFailure' &&
+      typeof phase.recovery === 'object' &&
+      phase.recovery.retryUntil !== operation.replayUntil)
   ) {
     throw new TypeError('Invalid persisted record')
   }

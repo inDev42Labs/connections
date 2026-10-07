@@ -6,6 +6,12 @@ Salesforce supports browser OAuth and client credentials. See the [provider cata
 
 Use `Salesforce.oauth({ clientId, clientSecret, redirectUri, scopes })` for browser authorization. Use scopes that permit the provider operations and refresh you need. The [getting-started guide](../getting-started.md#connect-through-browser-oauth) shows the start and callback sequence with Salesforce.
 
+## Browser OAuth renewal failures
+
+Refresh HTTP 400 or 401 with OAuth error `invalid_grant` reports `AuthorizationRequired`. HTTP outages, throttling, and other error responses report `TemporarilyUnavailable`, not proof of revoked authorization. In particular, `invalid_client` concerns app authentication rather than the saved connection grant. The `invalid_grant` and `invalid_client` distinction follows [OAuth token-endpoint errors](https://www.rfc-editor.org/rfc/rfc6749#section-5.2).
+
+Connections retains those remote failures without assuming the refresh request is replay-safe. A later read returns the retained failure unless recovery evidence exists. Repairing a proven pre-dispatch configuration failure permits a new acquisition on a later read. Lost transport responses and malformed successful responses require intervention. See [retrieval failures](../reference.md#handle-retrieval-failures). Local substitutes verify classification, not live Salesforce behavior.
+
 ## Client credentials
 
 `Salesforce.clientCredentials({ loginUrl })` requires the org's My Domain origin, such as `https://example.my.salesforce.com`. It does not default to `login.salesforce.com`; the global login and test hosts are unsupported for this flow. Configure the app's client credentials flow, scopes, and Run As integration user in Salesforce. No redirect URI or browser callback is used. See [Salesforce's client credentials flow](https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_client_credentials_flow.htm&type=5).

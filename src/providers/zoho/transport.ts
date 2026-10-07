@@ -8,7 +8,12 @@ import type {
   ProviderRefreshOutcome,
   RefreshCredentialInput,
 } from '../../core/contracts/provider.js'
-import { MalformedJsonResponse, readBoundedJsonResponse } from '../internal/http.js'
+import {
+  MalformedJsonResponse,
+  oauthErrorCode,
+  readBoundedJsonResponse,
+  readOAuthErrorCode,
+} from '../internal/http.js'
 import {
   parseAuthorizationCodeResponse,
   parseRefreshResponse,
@@ -53,6 +58,7 @@ const timeoutMilliseconds = 30_000
 const callbackParameters = new Set(['code', 'state', 'error', 'error_description', 'error_uri'])
 
 type TokenResponse =
+  | { readonly _tag: 'ProviderFailure' }
   | { readonly _tag: 'ProviderRejected' }
   | { readonly _tag: 'Success'; readonly body: unknown }
 
@@ -267,6 +273,7 @@ function tokenPost(
   url: URL,
   body: URLSearchParams,
   oneTimeCode = false,
+  refresh = false,
 ): Effect.Effect<TokenResponse, ZohoTransportFailure> {
   return Effect.tryPromise({
     try: async (effectSignal) => {
@@ -283,6 +290,16 @@ function tokenPost(
           signal: controller.signal,
         })
         if (!response.ok) {
+          if (refresh) {
+            if (response.status === 400 || response.status === 401) {
+              const error = await readOAuthErrorCode(response)
+              return error === 'invalid_code'
+                ? { _tag: 'ProviderRejected' as const }
+                : { _tag: 'ProviderFailure' as const }
+            }
+            void response.body?.cancel().catch(() => undefined)
+            return { _tag: 'ProviderFailure' as const }
+          }
           void response.body?.cancel().catch(() => undefined)
           if (
             oneTimeCode &&
@@ -292,7 +309,19 @@ function tokenPost(
           }
           return { _tag: 'ProviderRejected' as const }
         }
-        return { _tag: 'Success' as const, body: await readBoundedJsonResponse(response) }
+        const responseBody = await readBoundedJsonResponse(response)
+        if (refresh) {
+          const error = oauthErrorCode(responseBody)
+          // invalid_code in a refresh-token grant means the retained token is
+          // invalid or revoked. invalid_client and access_denied do not.
+          // https://www.zoho.com/books/api/v3/oauth/#step4
+          if (error !== null) {
+            return error === 'invalid_code'
+              ? { _tag: 'ProviderRejected' as const }
+              : { _tag: 'ProviderFailure' as const }
+          }
+        }
+        return { _tag: 'Success' as const, body: responseBody }
       } finally {
         clearTimeout(timeout)
         effectSignal.removeEventListener('abort', abort)
@@ -331,7 +360,7 @@ function exchangeSelfClientCode<Requirements>(
       )
     }),
     Effect.flatMap((response) =>
-      response._tag === 'ProviderRejected'
+      response._tag !== 'Success'
         ? Effect.fail(new ZohoTransportFailure({ reason: 'ProviderRejected' }))
         : parseAuthorizationCodeResponse(response.body, input.now),
     ),
@@ -366,7 +395,7 @@ function exchangeAuthorizationCode<Requirements>(
       )
     }),
     Effect.flatMap((response) =>
-      response._tag === 'ProviderRejected'
+      response._tag !== 'Success'
         ? Effect.fail(new ZohoTransportFailure({ reason: 'ProviderRejected' }))
         : parseAuthorizationCodeResponse(response.body, input.now),
     ),
@@ -398,16 +427,22 @@ function refreshCredentials<Requirements>(
           client_id: clientId,
           client_secret: Redacted.value(clientSecret),
         }),
+        false,
+        true,
       )
     }),
-    Effect.flatMap((response) =>
-      response._tag === 'ProviderRejected'
-        ? Effect.fail(new ZohoTransportFailure({ reason: 'ProviderRejected' }))
-        : parseRefreshResponse(response.body, previous, input.now),
+    Effect.flatMap((response): Effect.Effect<ProviderRefreshOutcome, ZohoTransportFailure> =>
+      response._tag !== 'Success'
+        ? Effect.succeed({ _tag: response._tag })
+        : parseRefreshResponse(response.body, previous, input.now).pipe(
+            Effect.map((credentials): ProviderRefreshOutcome => ({
+              _tag: 'Refreshed',
+              credentials,
+            })),
+          ),
     ),
     Effect.matchEffect({
-      onSuccess: (credentials) =>
-        Effect.succeed<ProviderRefreshOutcome>({ _tag: 'Refreshed', credentials }),
+      onSuccess: Effect.succeed,
       onFailure: (failure) =>
         Effect.succeed<ProviderRefreshOutcome>(
           failure.reason === 'ProviderRejected'

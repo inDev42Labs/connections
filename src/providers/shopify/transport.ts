@@ -1,4 +1,4 @@
-import { Effect, Redacted } from 'effect'
+import { Clock, Effect, Redacted, Result } from 'effect'
 import type {
   AuthorizationCallback,
   AuthorizationCodeExchangeInput,
@@ -39,12 +39,16 @@ const authorizationPath = '/admin/oauth/authorize'
 const tokenPath = '/admin/oauth/access_token'
 const timeoutMilliseconds = 30_000
 const maximumRefreshAttempts = 3
+const maximumRefreshMilliseconds = 25_000
+const refreshBackoffMilliseconds = [250, 750] as const
+const maximumRefreshBackoffMilliseconds = 1_000
+const refreshReplayWindowMilliseconds = 30 * 24 * 60 * 60 * 1_000
 const requiredCallbackParameters = ['code', 'state', 'shop', 'hmac'] as const
 const optionalCallbackParameters = new Set(['host', 'timestamp'])
 const callbackParameters = new Set([...requiredCallbackParameters, ...optionalCallbackParameters])
 
 type TokenResponse =
-  | { readonly _tag: 'HttpFailure'; readonly status: number }
+  | { readonly _tag: 'HttpFailure'; readonly status: number; readonly retryAfter: string | null }
   | { readonly _tag: 'Success'; readonly body: unknown }
 
 function resolveText<Requirements>(
@@ -338,7 +342,11 @@ function tokenPost(
         })
         if (!response.ok) {
           void response.body?.cancel().catch(() => undefined)
-          return { _tag: 'HttpFailure' as const, status: response.status }
+          return {
+            _tag: 'HttpFailure' as const,
+            status: response.status,
+            retryAfter: response.headers.get('retry-after'),
+          }
         }
         return { _tag: 'Success' as const, body: await readBoundedJsonResponse(response) }
       } finally {
@@ -386,23 +394,42 @@ function exchangeAuthorizationCode<Requirements>(
   )
 }
 
+function retryAfterMilliseconds(value: string | null, now: number): number {
+  if (value === null) return 0
+  const milliseconds = /^\d+$/.test(value) ? Number(value) * 1_000 : Date.parse(value) - now
+  return Number.isFinite(milliseconds) ? Math.max(0, milliseconds) : 0
+}
+
 function refreshTokenPost(
   url: URL,
   body: URLSearchParams,
   shopDomain: string,
   scopes: readonly string[],
-  now: number,
-  attemptsRemaining = maximumRefreshAttempts,
+  input: RefreshCredentialInput,
+  retryUntil: number,
+  executionDeadline: number,
+  currentNow: Effect.Effect<number>,
 ): Effect.Effect<ProviderRefreshOutcome> {
-  return tokenPost(url, body).pipe(
-    Effect.matchEffect({
-      onFailure: (failure) =>
-        failure.reason === 'TransportFailure' && attemptsRemaining > 1
-          ? refreshTokenPost(url, body, shopDomain, scopes, now, attemptsRemaining - 1)
-          : Effect.succeed<ProviderRefreshOutcome>({ _tag: 'ProviderOutcomeUnknown' }),
-      onSuccess: (response): Effect.Effect<ProviderRefreshOutcome> => {
-        if (response._tag === 'Success') {
-          return parseTokenResponse(response.body, shopDomain, scopes, now).pipe(
+  return Effect.gen(function* () {
+    let slept = 0
+    for (let attempt = 0; attempt < maximumRefreshAttempts; attempt++) {
+      const beforeDispatch = yield* currentNow
+      if (beforeDispatch >= retryUntil) return { _tag: 'ProviderOutcomeUnknown' }
+      if (beforeDispatch >= executionDeadline)
+        return {
+          _tag: 'ProviderFailure',
+          recovery: { _tag: 'ReplaySafe', retryUntil, retryAt: beforeDispatch },
+        }
+      const response = yield* Effect.result(tokenPost(url, body))
+      let retryAfter = 0
+      if (Result.isSuccess(response)) {
+        if (response.success._tag === 'Success') {
+          return yield* parseTokenResponse(
+            response.success.body,
+            shopDomain,
+            scopes,
+            input.now,
+          ).pipe(
             Effect.match({
               onFailure: (): ProviderRefreshOutcome => ({ _tag: 'ProviderOutcomeUnknown' }),
               onSuccess: (credentials): ProviderRefreshOutcome => ({
@@ -412,16 +439,32 @@ function refreshTokenPost(
             }),
           )
         }
-        if (response.status === 401) return Effect.succeed({ _tag: 'ProviderRejected' })
-        if (response.status !== 429 && response.status < 500) {
-          return Effect.succeed({ _tag: 'ProviderFailure' })
+        if (response.success.status === 401) return { _tag: 'ProviderRejected' }
+        if (response.success.status !== 429 && response.success.status < 500)
+          return { _tag: 'ProviderFailure' }
+        retryAfter = retryAfterMilliseconds(response.success.retryAfter, yield* currentNow)
+      } else if (response.failure.reason !== 'TransportFailure') {
+        return { _tag: 'ProviderOutcomeUnknown' }
+      }
+      const now = yield* currentNow
+      if (now >= retryUntil) return { _tag: 'ProviderOutcomeUnknown' }
+      const delay = Math.max(refreshBackoffMilliseconds[attempt] ?? 750, retryAfter)
+      if (
+        attempt === maximumRefreshAttempts - 1 ||
+        slept + delay > maximumRefreshBackoffMilliseconds ||
+        now + delay >= retryUntil ||
+        now + delay >= executionDeadline
+      ) {
+        return {
+          _tag: 'ProviderFailure',
+          recovery: { _tag: 'ReplaySafe', retryUntil, retryAt: Math.min(retryUntil, now + delay) },
         }
-        return attemptsRemaining > 1
-          ? refreshTokenPost(url, body, shopDomain, scopes, now, attemptsRemaining - 1)
-          : Effect.succeed({ _tag: 'ProviderOutcomeUnknown' })
-      },
-    }),
-  )
+      }
+      yield* Effect.sleep(delay)
+      slept += delay
+    }
+    return { _tag: 'ProviderOutcomeUnknown' }
+  })
 }
 
 function refreshCredentials<Requirements>(
@@ -436,42 +479,87 @@ function refreshCredentials<Requirements>(
     return Effect.succeed({ _tag: 'ProviderRejected' })
   }
 
-  return configuredShopDomain(configuration.shopDomain).pipe(
-    Effect.flatMap((shopDomain) => {
-      if (previous.shopDomain !== shopDomain) {
-        return Effect.fail(new ShopifyTransportFailure({ reason: 'InvalidStoredCredentials' }))
-      }
-      return Effect.all({
-        clientId: configuredClientId(configuration.clientId),
-        clientSecret: configuredClientSecret(configuration.clientSecret),
-        scopes: configuredScopes(configuration.scopes),
-      }).pipe(
-        Effect.flatMap(({ clientId, clientSecret, scopes }) =>
-          refreshTokenPost(
-            new URL(tokenPath, shopOrigin(shopDomain)),
-            new URLSearchParams({
-              grant_type: 'refresh_token',
-              client_id: clientId,
-              client_secret: Redacted.value(clientSecret),
-              refresh_token: previous.refreshToken,
-            }),
-            shopDomain,
-            scopes,
-            input.now,
+  return Effect.gen(function* () {
+    const startedAt = yield* Clock.currentTimeMillis
+    const logicalStartedAt = input.deadline === undefined ? input.now : startedAt
+    const currentNow = Clock.currentTimeMillis.pipe(
+      Effect.map((time) => logicalStartedAt + time - startedAt),
+    )
+    // Old-token replay is a provider guarantee, not proof that the failed request
+    // did nothing. Retain the earliest possible use across later recovery reads.
+    // https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens#token-refresh
+    const retryUntil = Math.min(
+      previous.refreshTokenExpiresAt,
+      input.now + refreshReplayWindowMilliseconds,
+      input.replayUntil ?? Infinity,
+    )
+    if (!Number.isFinite(retryUntil) || retryUntil <= logicalStartedAt)
+      return { _tag: 'ProviderOutcomeUnknown' } as const
+    const budget = Math.max(
+      0,
+      Math.min(
+        maximumRefreshMilliseconds,
+        (input.deadline ?? logicalStartedAt + maximumRefreshMilliseconds) - logicalStartedAt,
+        retryUntil - logicalStartedAt,
+      ),
+    )
+    let dispatched = false
+    const timeoutFailure = Effect.gen(function* () {
+      const now = yield* currentNow
+      if (now >= retryUntil) return { _tag: 'ProviderOutcomeUnknown' } as const
+      return dispatched
+        ? {
+            _tag: 'ProviderFailure' as const,
+            recovery: { _tag: 'ReplaySafe' as const, retryUntil, retryAt: now },
+          }
+        : { _tag: 'ProviderFailure' as const, recovery: 'NotDispatched' as const }
+    })
+    const program = configuredShopDomain(configuration.shopDomain).pipe(
+      Effect.flatMap((shopDomain) => {
+        if (previous.shopDomain !== shopDomain)
+          return Effect.fail(new ShopifyTransportFailure({ reason: 'InvalidStoredCredentials' }))
+        return Effect.all({
+          clientId: configuredClientId(configuration.clientId),
+          clientSecret: configuredClientSecret(configuration.clientSecret),
+          scopes: configuredScopes(configuration.scopes),
+        }).pipe(
+          Effect.flatMap(({ clientId, clientSecret, scopes }) =>
+            currentNow.pipe(
+              Effect.flatMap((now) => {
+                if (now >= logicalStartedAt + budget) return timeoutFailure
+                dispatched = true
+                return refreshTokenPost(
+                  new URL(tokenPath, shopOrigin(shopDomain)),
+                  new URLSearchParams({
+                    grant_type: 'refresh_token',
+                    client_id: clientId,
+                    client_secret: Redacted.value(clientSecret),
+                    refresh_token: previous.refreshToken,
+                  }),
+                  shopDomain,
+                  scopes,
+                  input,
+                  retryUntil,
+                  logicalStartedAt + budget,
+                  currentNow,
+                )
+              }),
+            ),
           ),
-        ),
-      )
-    }),
-    Effect.matchEffect({
-      onFailure: (failure) =>
-        Effect.succeed<ProviderRefreshOutcome>(
-          failure.reason === 'InvalidConfiguration' || failure.reason === 'InvalidStoredCredentials'
-            ? { _tag: 'ProviderFailure', recovery: 'NotDispatched' }
-            : { _tag: 'ProviderFailure' },
-        ),
-      onSuccess: Effect.succeed,
-    }),
-  )
+        )
+      }),
+      Effect.catch(() =>
+        Effect.succeed<ProviderRefreshOutcome>({
+          _tag: 'ProviderFailure',
+          recovery: 'NotDispatched',
+        }),
+      ),
+    )
+    if (budget === 0) return yield* timeoutFailure
+    return yield* program.pipe(
+      Effect.timeoutOrElse({ duration: budget, orElse: () => timeoutFailure }),
+    )
+  })
 }
 
 export function makeShopifyTransport<Requirements>(

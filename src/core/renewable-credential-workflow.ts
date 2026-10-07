@@ -1,5 +1,6 @@
 import { Clock, Effect, Result } from 'effect'
 import type { EncryptionContext } from './contracts/encryptor.js'
+import type { CredentialFailureRecovery } from './contracts/recovery.js'
 import type {
   ConnectionKey,
   ConnectionSnapshot,
@@ -42,7 +43,7 @@ export type RenewableCredentialOutcome =
       }
     }
   | { readonly _tag: 'ProviderRejected' }
-  | { readonly _tag: 'ProviderFailure'; readonly recovery?: 'NotDispatched' }
+  | { readonly _tag: 'ProviderFailure'; readonly recovery?: CredentialFailureRecovery }
   | { readonly _tag: 'ProviderOutcomeUnknown' }
 
 function failureForCause(cause: OperationalCause): CredentialFailure {
@@ -129,6 +130,8 @@ export function makeRenewableCredentialWorkflow<
   readonly acquireCredentials: (input: {
     readonly protectedPayload: import('effect').Redacted.Redacted<string>
     readonly now: number
+    readonly deadline?: number
+    readonly replayUntil?: number
   }) => Effect.Effect<RenewableCredentialOutcome, never, ProviderRequirements>
 }): RenewableCredentialWorkflow<Credentials, ProviderRequirements | StoreRequirements> {
   type WorkflowRequirements = ProviderRequirements | StoreRequirements
@@ -198,7 +201,7 @@ export function makeRenewableCredentialWorkflow<
     ownershipFence: string,
     failedAt: number,
     reason: 'ProviderRejected' | 'ProviderFailure',
-    recovery?: 'NotDispatched',
+    recovery?: CredentialFailureRecovery,
   ): Effect.Effect<void, CredentialFailure, StoreRequirements> =>
     Effect.gen(function* () {
       const command = yield* credentialRequest({
@@ -276,10 +279,27 @@ export function makeRenewableCredentialWorkflow<
       }
 
       if (
+        operation?.replayUntil !== undefined &&
+        operation.replayUntil <= now &&
+        !(operation.phase._tag === 'KnownFailure' && operation.phase.reason === 'ProviderRejected')
+      ) {
+        yield* markIntervention(
+          key,
+          operation,
+          snapshot.revision,
+          now,
+          'ProviderOutcomeUnknown',
+          null,
+        )
+        return yield* Effect.fail(interventionRequired(new ProviderOutcomeUnknownCause()))
+      }
+      if (
         operation?.phase._tag === 'KnownFailure' &&
         !(
           operation.phase.reason === 'ProviderFailure' &&
-          operation.phase.recovery === 'NotDispatched'
+          (operation.phase.recovery === 'NotDispatched' ||
+            (typeof operation.phase.recovery === 'object' &&
+              operation.phase.recovery.retryAt <= now))
         )
       ) {
         return yield* Effect.fail(
@@ -294,7 +314,10 @@ export function makeRenewableCredentialWorkflow<
         return yield* Effect.fail(interventionRequired(interventionCause(operation.phase.reason)))
       }
 
-      if (operation?.phase._tag === 'DispatchPossible') {
+      if (
+        operation?.phase._tag === 'DispatchPossible' &&
+        !(operation.phase.leaseExpiresAt <= now && operation.replayUntil !== undefined)
+      ) {
         if (operation.phase.leaseExpiresAt <= now) {
           yield* markIntervention(
             key,
@@ -402,6 +425,10 @@ export function makeRenewableCredentialWorkflow<
         .acquireCredentials({
           protectedPayload,
           now: refreshedAt,
+          deadline: acquired.operation.phase.leaseExpiresAt - 5_000,
+          ...(acquired.operation.replayUntil === undefined
+            ? {}
+            : { replayUntil: acquired.operation.replayUntil }),
         })
         .pipe(Effect.catchDefect(() => Effect.succeed({ _tag: 'ProviderOutcomeUnknown' as const })))
       if (refresh._tag === 'ProviderOutcomeUnknown') {

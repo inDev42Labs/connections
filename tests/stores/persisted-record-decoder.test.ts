@@ -30,7 +30,12 @@ test('decodes an older authorized record without acquisition metadata', () => {
   })
 })
 
-function failedConnection(recovery?: unknown, reason = 'ProviderFailure', kind = 'refresh') {
+function failedConnection(
+  recovery?: unknown,
+  reason = 'ProviderFailure',
+  kind = 'refresh',
+  replayUntil?: unknown,
+) {
   return JSON.stringify({
     schemaVersion: 1,
     key: { namespace: 'test', providerId: 'provider', connectionId: 'connection' },
@@ -54,6 +59,7 @@ function failedConnection(recovery?: unknown, reason = 'ProviderFailure', kind =
       recoveryDeadline: 2_000,
       transferCount: 0,
       transferLimit: 1,
+      ...(replayUntil === undefined ? {} : { replayUntil }),
       phase: {
         _tag: 'KnownFailure',
         reason,
@@ -83,6 +89,42 @@ test('preserves explicit no-dispatch evidence across persistence decoding', () =
     recovery: 'NotDispatched',
   })
 })
+
+test('decodes bounded replay evidence without losing the retained window', () => {
+  const recovery = { _tag: 'ReplaySafe', retryUntil: 5_000, retryAt: 1_200 }
+  expect(
+    decodeConnectionJson(failedConnection(recovery, 'ProviderFailure', 'refresh', 5_000))
+      .credentialOperation,
+  ).toMatchObject({ replayUntil: 5_000, phase: { recovery } })
+})
+
+test.each([
+  [
+    { _tag: 'ReplaySafe', retryUntil: 5_000, retryAt: 1_200 },
+    undefined,
+    'ProviderFailure',
+    'refresh',
+  ],
+  [{ _tag: 'ReplaySafe', retryUntil: 5_000, retryAt: 1_200 }, 6_000, 'ProviderFailure', 'refresh'],
+  [{ _tag: 'ReplaySafe', retryUntil: 5_000, retryAt: 6_000 }, 5_000, 'ProviderFailure', 'refresh'],
+  [{ _tag: 'ReplaySafe', retryUntil: 1_000, retryAt: 1_000 }, 1_000, 'ProviderFailure', 'refresh'],
+  [{ _tag: 'ReplaySafe', retryUntil: 5_000, retryAt: -1 }, 5_000, 'ProviderFailure', 'refresh'],
+  [{ _tag: 'ReplaySafe', retryUntil: null, retryAt: 1_200 }, 5_000, 'ProviderFailure', 'refresh'],
+  [{ _tag: 'ReplaySafe', retryUntil: 5_000, retryAt: 1_200 }, 5_000, 'ProviderRejected', 'refresh'],
+  [
+    { _tag: 'ReplaySafe', retryUntil: 5_000, retryAt: 1_200 },
+    5_000,
+    'ProviderFailure',
+    'client-credentials-acquisition',
+  ],
+])(
+  'rejects malformed or mismatched bounded replay evidence %j',
+  (recovery, replayUntil, reason, kind) => {
+    expect(() =>
+      decodeConnectionJson(failedConnection(recovery, String(reason), String(kind), replayUntil)),
+    ).toThrow('Invalid persisted record')
+  },
+)
 
 test.each([
   ['ReplaySafe', 'ProviderFailure', 'refresh'],

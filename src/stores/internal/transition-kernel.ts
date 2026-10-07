@@ -11,6 +11,7 @@ import type {
   StoreCommand,
   StoreCommandResult,
 } from '../../core/contracts/store.js'
+import { recoveryMatches } from '../../core/contracts/recovery.js'
 
 export type StoredCommand = StoreCommand | CredentialOperationCommand
 export type StoredCommandKind = StoredCommand['_tag']
@@ -117,7 +118,7 @@ function phaseMatches(
         right._tag === 'KnownFailure' &&
         left.reason === right.reason &&
         left.failedAt === right.failedAt &&
-        left.recovery === right.recovery
+        recoveryMatches(left.recovery, right.recovery)
       )
     case 'InterventionRequired':
       return (
@@ -141,6 +142,7 @@ function operationMatches(left: CredentialOperation, right: CredentialOperation)
     left.recoveryDeadline === right.recoveryDeadline &&
     left.transferCount === right.transferCount &&
     left.transferLimit === right.transferLimit &&
+    left.replayUntil === right.replayUntil &&
     phaseMatches(left.phase, right.phase)
   )
 }
@@ -255,7 +257,7 @@ function receiptIsCurrent(
         operation?.operationId === command.operationId &&
         operation.phase._tag === 'KnownFailure' &&
         operation.phase.reason === command.reason &&
-        operation.phase.recovery === command.recovery
+        recoveryMatches(operation.phase.recovery, command.recovery)
       )
     case 'MarkCredentialOperationIntervention':
       return (
@@ -770,11 +772,21 @@ export function transitionCredentialOperation(
       const recoverableFailure =
         operation?.phase._tag === 'KnownFailure' &&
         operation.phase.reason === 'ProviderFailure' &&
-        operation.phase.recovery === 'NotDispatched' &&
+        (operation.phase.recovery === 'NotDispatched' ||
+          (typeof operation.phase.recovery === 'object' &&
+            operation.phase.recovery.retryAt <= command.acquiredAt)) &&
+        operation.kind === command.proposal.kind &&
+        operation.generation === existing.generation &&
+        (operation.replayUntil === undefined || operation.replayUntil > command.acquiredAt)
+      let acquired: CredentialOperation
+      const recoverableDispatch =
+        operation?.phase._tag === 'DispatchPossible' &&
+        operation.phase.leaseExpiresAt <= command.acquiredAt &&
+        operation.replayUntil !== undefined &&
+        operation.replayUntil > command.acquiredAt &&
         operation.kind === command.proposal.kind &&
         operation.generation === existing.generation
-      let acquired: CredentialOperation
-      if (operation === null || recoverableFailure) {
+      if (operation === null || recoverableFailure || recoverableDispatch) {
         if (
           (command.proposal.kind !== 'refresh' &&
             command.proposal.kind !== 'client-credentials-acquisition') ||
@@ -797,6 +809,7 @@ export function transitionCredentialOperation(
           recoveryDeadline: command.proposal.recoveryDeadline,
           transferCount: 0,
           transferLimit: command.proposal.transferLimit,
+          ...(operation?.replayUntil === undefined ? {} : { replayUntil: operation.replayUntil }),
           phase: {
             _tag: 'OwnedBeforeDispatch',
             ownershipFence: command.ownershipFence,
@@ -934,9 +947,20 @@ export function transitionCredentialOperation(
         operation.phase.ownershipFence !== command.ownershipFence ||
         !Number.isFinite(command.failedAt) ||
         (command.recovery !== undefined &&
-          (command.recovery !== 'NotDispatched' ||
-            command.reason !== 'ProviderFailure' ||
-            (operation.kind !== 'refresh' && operation.kind !== 'client-credentials-acquisition')))
+          (command.reason !== 'ProviderFailure' ||
+            (command.recovery === 'NotDispatched'
+              ? operation.kind !== 'refresh' && operation.kind !== 'client-credentials-acquisition'
+              : command.recovery === null ||
+                typeof command.recovery !== 'object' ||
+                command.recovery._tag !== 'ReplaySafe' ||
+                operation.kind !== 'refresh' ||
+                !Number.isFinite(command.recovery.retryUntil) ||
+                command.recovery.retryUntil <= command.failedAt ||
+                !Number.isFinite(command.recovery.retryAt) ||
+                command.recovery.retryAt < 0 ||
+                command.recovery.retryAt > command.recovery.retryUntil ||
+                (operation.replayUntil !== undefined &&
+                  command.recovery.retryUntil > operation.replayUntil))))
       ) {
         return finish(command, conditionChanged)
       }
@@ -955,6 +979,9 @@ export function transitionCredentialOperation(
             revision,
             credentialOperation: {
               ...operation,
+              ...(typeof command.recovery === 'object'
+                ? { replayUntil: command.recovery.retryUntil }
+                : {}),
               phase: {
                 _tag: 'KnownFailure',
                 reason: command.reason,
@@ -968,6 +995,15 @@ export function transitionCredentialOperation(
     }
 
     case 'MarkCredentialOperationIntervention': {
+      const fromExpiredReplay =
+        operation?.replayUntil !== undefined &&
+        operation.phase._tag !== 'InterventionRequired' &&
+        !(
+          operation.phase._tag === 'KnownFailure' && operation.phase.reason === 'ProviderRejected'
+        ) &&
+        operation.replayUntil <= command.markedAt &&
+        command.reason === 'ProviderOutcomeUnknown' &&
+        command.ownershipFence === null
       const fromCurrentUnknown =
         operation?.phase._tag === 'DispatchPossible' &&
         (command.reason === 'ProviderOutcomeUnknown' ||
@@ -988,7 +1024,10 @@ export function transitionCredentialOperation(
         existing.generation !== command.expectedGeneration ||
         existing.revision !== command.expectedRevision ||
         operation.operationId !== command.operationId ||
-        (!fromCurrentUnknown && !fromExpiredDispatch && !fromExhaustedRecovery) ||
+        (!fromCurrentUnknown &&
+          !fromExpiredDispatch &&
+          !fromExhaustedRecovery &&
+          !fromExpiredReplay) ||
         !Number.isFinite(command.markedAt)
       ) {
         return finish(command, conditionChanged)

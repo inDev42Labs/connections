@@ -8,7 +8,11 @@ import type {
   ProviderRefreshOutcome,
   RefreshCredentialInput,
 } from '../../core/contracts/provider.js'
-import { MalformedJsonResponse, readBoundedJsonResponse } from '../internal/http.js'
+import {
+  MalformedJsonResponse,
+  readBoundedJsonResponse,
+  readOAuthErrorCode,
+} from '../internal/http.js'
 import {
   parseAuthorizationCodeResponse,
   parseRefreshResponse,
@@ -41,6 +45,7 @@ const timeoutMilliseconds = 30_000
 const callbackParameters = new Set(['code', 'state', 'error', 'error_description', 'error_uri'])
 
 type TokenResponse =
+  | { readonly _tag: 'ProviderFailure' }
   | { readonly _tag: 'ProviderRejected' }
   | { readonly _tag: 'Success'; readonly body: unknown }
 
@@ -231,6 +236,7 @@ function parseAuthorizationCallback<Requirements>(
 function tokenPost(
   url: URL,
   body: URLSearchParams,
+  refresh = false,
 ): Effect.Effect<TokenResponse, SalesforceTransportFailure> {
   return Effect.tryPromise({
     try: async (effectSignal) => {
@@ -247,6 +253,19 @@ function tokenPost(
           signal: controller.signal,
         })
         if (!response.ok) {
+          if (refresh) {
+            // OAuth 2.0 section 5.2 distinguishes invalid_grant from client
+            // authentication errors. HTTP status alone does not prove revocation.
+            // https://www.rfc-editor.org/rfc/rfc6749#section-5.2
+            if (response.status === 400 || response.status === 401) {
+              const error = await readOAuthErrorCode(response)
+              return error === 'invalid_grant'
+                ? { _tag: 'ProviderRejected' as const }
+                : { _tag: 'ProviderFailure' as const }
+            }
+            void response.body?.cancel().catch(() => undefined)
+            return { _tag: 'ProviderFailure' as const }
+          }
           void response.body?.cancel().catch(() => undefined)
           return { _tag: 'ProviderRejected' as const }
         }
@@ -288,16 +307,21 @@ function refreshCredentials<Requirements>(
           client_id: clientId,
           client_secret: Redacted.value(clientSecret),
         }),
+        true,
       )
     }),
-    Effect.flatMap((response) =>
-      response._tag === 'ProviderRejected'
-        ? Effect.fail(new SalesforceTransportFailure({ reason: 'ProviderRejected' }))
-        : parseRefreshResponse(response.body, previous, input.now),
+    Effect.flatMap((response): Effect.Effect<ProviderRefreshOutcome, SalesforceTransportFailure> =>
+      response._tag !== 'Success'
+        ? Effect.succeed({ _tag: response._tag })
+        : parseRefreshResponse(response.body, previous, input.now).pipe(
+            Effect.map((credentials): ProviderRefreshOutcome => ({
+              _tag: 'Refreshed',
+              credentials,
+            })),
+          ),
     ),
     Effect.matchEffect({
-      onSuccess: (credentials) =>
-        Effect.succeed<ProviderRefreshOutcome>({ _tag: 'Refreshed', credentials }),
+      onSuccess: Effect.succeed,
       onFailure: (failure) =>
         Effect.succeed<ProviderRefreshOutcome>(
           failure.reason === 'ProviderRejected'
@@ -338,7 +362,7 @@ function exchangeAuthorizationCode<Requirements>(
       return tokenPost(new URL(tokenPath, loginUrl), body)
     }),
     Effect.flatMap((response) =>
-      response._tag === 'ProviderRejected'
+      response._tag !== 'Success'
         ? Effect.fail(new SalesforceTransportFailure({ reason: 'ProviderRejected' }))
         : parseAuthorizationCodeResponse(response.body, input.now),
     ),

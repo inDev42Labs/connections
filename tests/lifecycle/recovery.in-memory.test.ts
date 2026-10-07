@@ -371,7 +371,9 @@ describe('Salesforce refresh recovery with the in-memory store', () => {
   })
 
   test('persists distinct known-rejection and unknown-outcome failures without replay', async () => {
-    const rejected = await makeFixture([{ _tag: 'Response', status: 400, body: 'invalid_grant' }])
+    const rejected = await makeFixture([
+      { _tag: 'Response', status: 400, json: { error: 'invalid_grant' } },
+    ])
     try {
       await expect(
         rejected.driver.run(failure(rejected.connection.credentialUse('conn_acme'))),

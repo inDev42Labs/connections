@@ -4,7 +4,7 @@ These technical specifications explain the current target for maintainers. [Cons
 
 | Feature | Technical specification | Approach and verification | Remaining work |
 | --- | --- | --- | --- |
-| Credential lifecycle | [Read, renew, report rejection, inspect, and remove](credential-lifecycle/spec.md) | [Shared workflow and execution](credential-lifecycle/plan.md) | [Deferred TODOs](credential-lifecycle/tasks.md) |
+| Credential lifecycle | [Read, renew, report rejection, inspect, and remove](credential-lifecycle/spec.md) | [Shared workflow and execution](credential-lifecycle/plan.md) | None |
 | Authorization | [Enroll and deliberately replace authorization](authorization/spec.md) | [Mechanism-specific setup](authorization/plan.md) | |
 | Protected storage | [Encrypted persistence and safe coordination](protected-storage/spec.md) | [Transactional adapters](protected-storage/plan.md) | |
 

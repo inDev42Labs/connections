@@ -1,4 +1,5 @@
 import type { Effect, Redacted } from 'effect'
+import type { CredentialFailureRecovery } from './recovery.js'
 import type { CredentialEnvelope, EncryptionContext } from './encryptor.js'
 
 export interface ConnectionKey {
@@ -38,7 +39,7 @@ export type CredentialOperationPhase =
       readonly _tag: 'KnownFailure'
       readonly reason: 'ProviderRejected' | 'ProviderFailure'
       readonly failedAt: number
-      readonly recovery?: 'NotDispatched'
+      readonly recovery?: CredentialFailureRecovery
     }
   | {
       readonly _tag: 'InterventionRequired'
@@ -59,6 +60,7 @@ interface CredentialOperationBase {
   readonly recoveryDeadline: number
   readonly transferCount: number
   readonly transferLimit: number
+  readonly replayUntil?: number
   readonly phase: CredentialOperationPhase
 }
 
@@ -277,7 +279,7 @@ export interface RecordCredentialOperationFailureCommand {
   readonly ownershipFence: string
   readonly failedAt: number
   readonly reason: 'ProviderRejected' | 'ProviderFailure'
-  readonly recovery?: 'NotDispatched'
+  readonly recovery?: CredentialFailureRecovery
 }
 
 export interface MarkCredentialOperationInterventionCommand {

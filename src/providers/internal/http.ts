@@ -2,6 +2,20 @@ const maximumJsonResponseBytes = 1024 * 1024
 
 export class MalformedJsonResponse extends Error {}
 
+export function oauthErrorCode(body: unknown): string | null {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return null
+  const error = Reflect.get(body, 'error')
+  return typeof error === 'string' ? error : null
+}
+
+export async function readOAuthErrorCode(response: Response): Promise<string | null> {
+  try {
+    return oauthErrorCode(await readBoundedJsonResponse(response))
+  } catch {
+    return null
+  }
+}
+
 export async function readBoundedJsonResponse(response: Response): Promise<unknown> {
   const contentLength = response.headers.get('content-length')
   if (

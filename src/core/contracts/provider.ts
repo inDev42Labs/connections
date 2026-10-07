@@ -1,4 +1,5 @@
 import type { Effect, Redacted } from 'effect'
+import type { CredentialFailureRecovery } from './recovery.js'
 
 const providerCredentialsType: unique symbol = Symbol.for(
   '@indev42/connections/providerCredentials',
@@ -44,6 +45,8 @@ export interface ProviderAuthorizationFailure {
 export interface RefreshCredentialInput {
   readonly protectedPayload: Redacted.Redacted<string>
   readonly now: number
+  readonly deadline?: number
+  readonly replayUntil?: number
 }
 
 export type ProviderRefreshOutcome =
@@ -52,7 +55,7 @@ export type ProviderRefreshOutcome =
       readonly credentials: ProviderCredentialSet
     }
   | { readonly _tag: 'ProviderRejected' }
-  | { readonly _tag: 'ProviderFailure'; readonly recovery?: 'NotDispatched' }
+  | { readonly _tag: 'ProviderFailure'; readonly recovery?: CredentialFailureRecovery }
   | { readonly _tag: 'ProviderOutcomeUnknown' }
 
 export interface PreparedClientCredentials {

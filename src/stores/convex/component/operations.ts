@@ -4,6 +4,7 @@ import {
   commandResultValidator,
   connectionKeyValidator,
   credentialEnvelopeValidator,
+  credentialFailureRecoveryValidator,
 } from './schema.js'
 import { executeCredentialOperation } from './persistence.js'
 
@@ -103,7 +104,7 @@ const failureArgs = {
   ownershipFence: v.string(),
   failedAt: v.number(),
   reason: knownFailureReasonValidator,
-  recovery: v.optional(v.literal('NotDispatched')),
+  recovery: v.optional(credentialFailureRecoveryValidator),
 }
 
 const interventionArgs = {

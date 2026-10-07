@@ -451,7 +451,10 @@ describe('Shopify OAuth', () => {
     const unknown = await Effect.runPromise(
       provider().refreshCredentials({ protectedPayload: storedPayload(), now: 5_000 }),
     )
-    expect(unknown).toEqual({ _tag: 'ProviderOutcomeUnknown' })
+    expect(unknown).toMatchObject({
+      _tag: 'ProviderFailure',
+      recovery: { _tag: 'ReplaySafe', retryUntil: 2_592_005_000 },
+    })
     expect(exhausted).toHaveBeenCalledTimes(3)
 
     for (const [status, expected] of [

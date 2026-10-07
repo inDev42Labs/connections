@@ -1727,6 +1727,126 @@ export function credentialOperationStoreConformance<
     },
   )
 
+  test(`${name}: bounded replay evidence survives ownership changes and cannot be extended by later failures`, async () => {
+    const target = makeTarget()
+    const key = {
+      namespace: `${name}:bounded-replay`,
+      providerId: 'shopify',
+      connectionId: 'connection',
+    }
+    const acquired = await acquireRefreshOperation(target, key, 'first')
+    if (acquired.operation.phase._tag !== 'OwnedBeforeDispatch') throw new Error('Expected owner')
+    const reserved = await reserveRefreshDispatch(target, key, acquired)
+    const failed = await target.run(
+      target.store.executeCredentialOperation(
+        await withRequest(
+          {
+            _tag: 'RecordCredentialOperationFailure' as const,
+            key,
+            expectedGeneration: reserved.generation,
+            expectedRevision: reserved.revision,
+            operationId: acquired.operation.operationId,
+            ownershipFence: acquired.operation.phase.ownershipFence,
+            failedAt: 2_060,
+            reason: 'ProviderFailure',
+            recovery: { _tag: 'ReplaySafe', retryUntil: 10_000, retryAt: 5_000 },
+          },
+          'record-replay',
+        ),
+      ),
+    )
+    if (failed._tag !== 'CredentialOperationFailed') throw new Error('Expected failure recording')
+    expect(await target.run(target.store.readConnection(key))).toMatchObject({
+      credentialOperation: {
+        replayUntil: 10_000,
+        phase: {
+          _tag: 'KnownFailure',
+          recovery: { _tag: 'ReplaySafe', retryUntil: 10_000, retryAt: 5_000 },
+        },
+      },
+    })
+    expect(
+      await target.run(
+        target.store.executeCredentialOperation(
+          await withRequest(acquisitionInput(key, failed.revision, 'early', 4_999), 'early'),
+        ),
+      ),
+    ).toEqual({ _tag: 'StoreConflict', reason: 'ConditionChanged' })
+    const retried = await target.run(
+      target.store.executeCredentialOperation(
+        await withRequest(acquisitionInput(key, failed.revision, 'retry', 5_000), 'retry'),
+      ),
+    )
+    if (
+      retried._tag !== 'CredentialOperationAcquired' ||
+      retried.operation.phase._tag !== 'OwnedBeforeDispatch'
+    )
+      throw new Error('Expected recovery owner')
+    expect(retried.operation).toMatchObject({ replayUntil: 10_000, startedAt: 5_000 })
+    const secondReservation = await reserveRefreshDispatch(target, key, retried)
+    const secondFailure = {
+      _tag: 'RecordCredentialOperationFailure' as const,
+      key,
+      expectedGeneration: secondReservation.generation,
+      expectedRevision: secondReservation.revision,
+      operationId: retried.operation.operationId,
+      ownershipFence: retried.operation.phase.ownershipFence,
+      failedAt: 5_060,
+      reason: 'ProviderFailure' as const,
+    }
+    expect(
+      await target.run(
+        target.store.executeCredentialOperation(
+          await withRequest(
+            {
+              ...secondFailure,
+              recovery: { _tag: 'ReplaySafe', retryUntil: 20_000, retryAt: 5_060 },
+            },
+            'extend',
+          ),
+        ),
+      ),
+    ).toEqual({ _tag: 'StoreConflict', reason: 'ConditionChanged' })
+    const notDispatched = await target.run(
+      target.store.executeCredentialOperation(
+        await withRequest({ ...secondFailure, recovery: 'NotDispatched' }, 'local-failure'),
+      ),
+    )
+    if (notDispatched._tag !== 'CredentialOperationFailed')
+      throw new Error('Expected local failure recording')
+    expect(await target.run(target.store.readConnection(key))).toMatchObject({
+      credentialOperation: { replayUntil: 10_000, phase: { recovery: 'NotDispatched' } },
+    })
+    expect(
+      await target.run(
+        target.store.executeCredentialOperation(
+          await withRequest(
+            acquisitionInput(key, notDispatched.revision, 'expired', 10_000),
+            'expired',
+          ),
+        ),
+      ),
+    ).toEqual({ _tag: 'StoreConflict', reason: 'ConditionChanged' })
+    const marked = await target.run(
+      target.store.executeCredentialOperation(
+        await withRequest(
+          {
+            _tag: 'MarkCredentialOperationIntervention' as const,
+            key,
+            expectedGeneration: notDispatched.generation,
+            expectedRevision: notDispatched.revision,
+            operationId: retried.operation.operationId,
+            ownershipFence: null,
+            markedAt: 10_000,
+            reason: 'ProviderOutcomeUnknown',
+          },
+          'expired-intervention',
+        ),
+      ),
+    )
+    expect(marked._tag).toBe('CredentialOperationInterventionMarked')
+  })
+
   test(`${name}: rejects recovery evidence attached to authorization rejection`, async () => {
     const target = makeTarget()
     const key = {

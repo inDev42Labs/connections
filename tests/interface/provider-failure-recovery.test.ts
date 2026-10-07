@@ -227,6 +227,56 @@ describe('public-manager recovery from retained provider failures', () => {
     )
   }
 
+  test.each([
+    ['salesforce', 503, null, 'TemporarilyUnavailable'],
+    ['salesforce', 429, null, 'TemporarilyUnavailable'],
+    ['salesforce', 503, 'invalid_grant', 'TemporarilyUnavailable'],
+    ['salesforce', 400, 'invalid_client', 'TemporarilyUnavailable'],
+    ['salesforce', 401, null, 'TemporarilyUnavailable'],
+    ['salesforce', 400, 'invalid_grant', 'AuthorizationRequired'],
+    ['zoho', 503, null, 'TemporarilyUnavailable'],
+    ['zoho', 429, null, 'TemporarilyUnavailable'],
+    ['zoho', 400, 'invalid_client_secret', 'TemporarilyUnavailable'],
+    ['zoho', 200, 'access_denied', 'TemporarilyUnavailable'],
+    ['zoho', 400, 'invalid_code', 'AuthorizationRequired'],
+    ['zoho', 200, 'invalid_code', 'AuthorizationRequired'],
+  ] as const)(
+    '%s refresh HTTP %s with error %s reports %s without assuming replay safety',
+    async (kind, status, error, expected) => {
+      let requests = 0
+      const fetch = vi.fn<(url: string | URL | Request, init?: RequestInit) => Promise<Response>>(
+        async () => {
+          requests++
+          return requests === 1
+            ? tokenResponse(kind, 'initial-access')
+            : error === null
+              ? new Response(null, { status })
+              : Response.json({ error, error_description: 'secret-canary' }, { status })
+        },
+      )
+      vi.stubGlobal('fetch', fetch)
+      const target = fixture(kind, 'sqlite')
+      try {
+        await target.enroll()
+        const failure = await target.manager
+          .credentials(connectionId)
+          .catch((error: unknown) => error)
+        expect(failure).toMatchObject({ _tag: expected })
+        expect(JSON.stringify(failure)).not.toContain('secret-canary')
+        await expect(target.makeManager().credentials(connectionId)).rejects.toMatchObject({
+          _tag: expected,
+        })
+        expect(fetch).toHaveBeenCalledTimes(2)
+        await expect(target.manager.inspect(connectionId)).resolves.toEqual({
+          savedAuthorization: true,
+          credentialWork: 'known-failure',
+        })
+      } finally {
+        target.close()
+      }
+    },
+  )
+
   test('Salesforce client credentials recover after the My Domain endpoint is repaired', async () => {
     let loginUrl = 'https://login.salesforce.com'
     const fetch = vi.fn<(url: string | URL | Request, init?: RequestInit) => Promise<Response>>(
