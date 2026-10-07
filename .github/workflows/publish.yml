@@ -4,12 +4,18 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing stable version tag to verify and publish
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -20,6 +26,7 @@ jobs:
       - name: Checkout release tag
         uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.release_tag || github.ref }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -31,7 +38,7 @@ jobs:
 
       - name: Validate release
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict'
@@ -92,7 +99,7 @@ jobs:
 
       - name: Publish to latest with npm trusted publishing
         run: |
-          packages=(npm-package/*.tgz)
+          packages=(./npm-package/*.tgz)
           test "${#packages[@]}" -eq 1
           test -f "${packages[0]}"
           npm publish "${packages[0]}" --access public --tag latest --ignore-scripts
