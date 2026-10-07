@@ -1,0 +1,9 @@
+{
+  "name": "connections-local-convex-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "convex": "1.45.0",
+    "effect": "4.0.0-rc.112"
+  }
+}

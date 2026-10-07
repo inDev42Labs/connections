@@ -1,519 +1,497 @@
-import {
-  isOAuthProvider,
-  isOAuthProviderBinding,
-  isSourcedStaticProviderBinding,
-  type OAuthProviderBinding,
-  type ProviderBinding,
-  type SourcedStaticProviderBinding,
-  type ValidateProviderBinding,
-  type ValidateProviderBindings,
-} from "./binding";
-import {
-  InvalidTokenRecordError,
-  MissingRefreshTokenError,
-  OAuthProviderError,
-  ProviderCapabilityError,
-  ProviderNotRegisteredError,
-  TokenExpiredError,
-  TokenNotFoundError,
-} from "./errors";
-import type { AuthorizationUrlInput, ExchangeCodeInput } from "./provider";
-import { serializeTokenKey, type TokenStore } from "./store";
-import { assertTokenRecord } from "./token-record";
-import type { TokenKey, TokenRecord } from "./types";
+import { Effect, Redacted } from 'effect'
+import type { Effect as EffectType } from 'effect'
+import type {
+  ApiKeyProviderDefinition,
+  ClientCredentialsProviderDefinition,
+  OAuthProviderDefinition,
+  ProviderCredentials,
+  SelfClientProviderDefinition,
+} from './contracts/provider.js'
+import type { ConnectionStore } from './contracts/store.js'
+import type { CredentialUse, ConnectionIdentity } from './model.js'
+import type { ApiKeyWorkflow } from './api-key-workflow.js'
+import { makeApiKeyWorkflow } from './api-key-workflow.js'
+import { makeClientCredentialsWorkflow } from './client-credentials-workflow.js'
+import { makeOAuthWorkflow } from './workflow.js'
+import { makeSelfClientWorkflow } from './self-client-workflow.js'
+import type { AuthorizationStart, AuthorizationTarget, ConnectionInspection } from './model.js'
+import type {
+  AuthorizationFailure,
+  CredentialConfigurationFailure,
+  InspectionFailure,
+  RemovalFailure,
+} from './failures.js'
+import type { CredentialFailure as ReadCredentialFailure } from './failures.js'
+export type { CredentialFailure as ReadCredentialFailure } from './failures.js'
+export type {
+  AuthorizationStart,
+  AuthorizationTarget,
+  ConnectionInspection,
+  CredentialWorkCondition,
+  CredentialUse,
+} from './model.js'
 
-export type ConnectionsEvent = {
-  level: "debug" | "info" | "warn" | "error";
-  operation:
-    | "token.exchange"
-    | "token.refresh"
-    | "token.load"
-    | "token.persist";
-  provider: string;
-  outcome: "started" | "succeeded" | "failed";
-  status?: number;
-  errorCode?: string;
-  durationMs?: number;
-  details?: Record<string, unknown>;
-};
+/** @internal Runtime brand used only to select invocation-bound execution. */
+export const invocationBoundPromiseStore = Symbol(
+  '@indev42/connections/invocationBoundPromiseStore',
+)
+/** @internal Carries the unbound Promise manager's invocation runner. */
+export const bindPromiseManager = Symbol('@indev42/connections/bindPromiseManager')
 
-export type TokenManagerOptions<
-  TProviders extends Readonly<Record<string, unknown>> = Readonly<
-    Record<string, ProviderBinding>
-  >,
-> = {
-  providers?: TProviders & ValidateProviderBindings<TProviders>;
-  refreshSkewMs?: number;
-  now?: () => number;
-  onEvent?: (event: ConnectionsEvent) => void;
-};
+export type InvocationBoundPromiseStore<
+  Error,
+  Requirements,
+  InspectionError,
+  InspectionRequirements,
+> = ConnectionStore<Error, Requirements, InspectionError, InspectionRequirements> & {
+  readonly [invocationBoundPromiseStore]: true
+}
 
-export type TokenManagerRequestOptions = {
-  metadata?: Record<string, unknown>;
-};
+export type PromiseEffectRunner<Requirements> = <Value, Error>(
+  operation: EffectType.Effect<Value, Error, Requirements>,
+) => Promise<Value>
 
-export type SaveTokenInput = {
-  key: TokenKey;
-  token: TokenRecord;
-};
-
-export type SaveCredentialInput<TCredential = unknown> = {
-  key: TokenKey;
-  credential: TCredential;
-};
-
-/** @deprecated Use SaveTokenInput instead. */
-export type SaveInitialTokenInput = SaveTokenInput;
-
-export type ExchangeCodeAndSaveInput = ExchangeCodeInput;
-
-export type GetAuthorizationUrlInput = AuthorizationUrlInput;
-
-export class TokenManager<
-  const TProviders extends Readonly<Record<string, unknown>> = Readonly<
-    Record<string, ProviderBinding>
-  >,
+export interface PromiseManagerRunners<
+  ActionRequirements,
+  InspectionRequirements,
+  RemovalRequirements = ActionRequirements,
 > {
-  private readonly bindings = new Map<string, ProviderBinding>();
-  private readonly refreshLocks = new Map<string, Promise<TokenRecord>>();
-  private readonly refreshSkewMs: number;
-  private readonly now: () => number;
-  private readonly onEvent?: (event: ConnectionsEvent) => void;
+  readonly action: PromiseEffectRunner<ActionRequirements>
+  readonly inspection: PromiseEffectRunner<InspectionRequirements>
+  readonly removal: PromiseEffectRunner<RemovalRequirements>
+}
 
-  constructor(options: TokenManagerOptions<TProviders> = {}) {
-    this.refreshSkewMs = options.refreshSkewMs ?? 60_000;
-    this.now = options.now ?? Date.now;
-    this.onEvent = options.onEvent;
+export interface PromiseCredentialUse<Credentials> {
+  readonly credentials: Credentials
+  readonly reportRejected: () => Promise<void>
+}
 
-    for (const [provider, binding] of Object.entries(
-      options.providers ?? {},
-    ) as Array<[string, ProviderBinding]>) {
-      this.bindings.set(provider, binding);
-    }
-  }
-
-  use<TBinding>(
-    provider: string,
-    binding: TBinding & ValidateProviderBinding<TBinding>,
-  ): this {
-    this.bindings.set(provider, binding as ProviderBinding);
-    return this;
-  }
-
-  async getAuthorizationUrl(input: GetAuthorizationUrlInput): Promise<string> {
-    const binding = this.getOAuthBinding(input.key.provider, "authorizationUrl");
-    return binding.adapter.getAuthorizationUrl({
-      key: input.key,
-      redirectUri: input.redirectUri,
-      scopes: input.scopes,
-      state: input.state,
-      metadata: input.metadata,
-    });
-  }
-
-  async exchangeCodeAndSave(
-    input: ExchangeCodeAndSaveInput,
-  ): Promise<TokenRecord> {
-    const binding = this.getOAuthBinding(input.key.provider, "exchangeCode");
-    const startedAt = this.now();
-    this.emit({
-      level: "debug",
-      operation: "token.exchange",
-      provider: input.key.provider,
-      outcome: "started",
-    });
-
-    let token: unknown;
-    try {
-      token = await binding.adapter.exchangeCode({
-        key: input.key,
-        code: input.code,
-        redirectUri: input.redirectUri,
-        metadata: input.metadata,
-      });
-      assertTokenRecord(
-        token,
-        `${providerDisplayName(input.key.provider)} exchangeCode returned an invalid token record`,
-      );
-      this.emit({
-        level: "info",
-        operation: "token.exchange",
-        provider: input.key.provider,
-        outcome: "succeeded",
-        durationMs: this.now() - startedAt,
-      });
-    } catch (error) {
-      this.emitFailure(
-        "token.exchange",
-        input.key.provider,
-        error,
-        startedAt,
-      );
-      throw error;
-    }
-
-    await this.persist(input.key, token, binding.store);
-    return token;
-  }
-
-  async saveCredential<TCredential>(
-    input: SaveCredentialInput<TCredential>,
-  ): Promise<void> {
-    const binding = this.getBinding(input.key.provider);
-    if (
-      isOAuthProviderBinding(binding) ||
-      isSourcedStaticProviderBinding(binding)
-    ) {
-      throw new ProviderCapabilityError(
-        input.key.provider,
-        "saveCredential",
-      );
-    }
-
-    const token: unknown = binding.adapter.createToken(input.credential, {
-      key: input.key,
-    });
-    assertTokenRecord(
-      token,
-      `${providerDisplayName(input.key.provider)} createToken returned an invalid token record`,
-    );
-    await this.persist(input.key, token, binding.store);
-  }
-
-  async saveToken(input: SaveTokenInput): Promise<void> {
-    const binding = this.getBinding(input.key.provider);
-    if (isSourcedStaticProviderBinding(binding)) {
-      throw new ProviderCapabilityError(input.key.provider, "saveToken");
-    }
-
-    assertTokenRecord(input.token, "Token is invalid");
-    await this.persist(input.key, input.token, binding.store);
-  }
-
-  /** @deprecated Use saveToken instead. */
-  async saveInitialToken(input: SaveInitialTokenInput): Promise<void> {
-    return this.saveToken(input);
-  }
-
-  async getValidAccessToken(
-    key: TokenKey,
-    options: TokenManagerRequestOptions = {},
-  ): Promise<string> {
-    const token = await this.getValidToken(key, options);
-    assertTokenRecord(token, "Token returned by getValidAccessToken is invalid");
-    return token.accessToken;
-  }
-
-  async getValidToken(
-    key: TokenKey,
-    options: TokenManagerRequestOptions = {},
-  ): Promise<TokenRecord> {
-    const binding = this.getBinding(key.provider);
-    const token = await this.load(key, binding);
-
-    if (!token) {
-      throw new TokenNotFoundError();
-    }
-
-    if (!isOAuthProviderBinding(binding) || token.lifecycle === "static") {
-      return this.assertStaticTokenIsCurrent(token);
-    }
-
-    if (!this.shouldRefresh(token)) {
-      return token;
-    }
-
-    return this.refreshAndSave(key, token, options, binding);
-  }
-
-  async revoke(
-    key: TokenKey,
-    options: TokenManagerRequestOptions = {},
-  ): Promise<void> {
-    const binding = this.getBinding(key.provider);
-    if (isSourcedStaticProviderBinding(binding)) {
-      throw new ProviderCapabilityError(key.provider, "revoke");
-    }
-
-    const token = await this.loadFromStore(key, binding.store);
-    if (
-      token &&
-      isOAuthProvider(binding.adapter) &&
-      binding.adapter.revokeToken
-    ) {
-      await binding.adapter.revokeToken({
-        key,
-        token,
-        metadata: options.metadata,
-      });
-    }
-
-    await binding.store.delete(key);
-  }
-
-  private assertStaticTokenIsCurrent(token: TokenRecord): TokenRecord {
-    if (token.expiresAt !== undefined && token.expiresAt <= this.now()) {
-      throw new TokenExpiredError(token.expiresAt);
-    }
-    return token;
-  }
-
-  private shouldRefresh(token: TokenRecord): boolean {
-    return (
-      token.expiresAt !== undefined &&
-      token.expiresAt <= this.now() + this.refreshSkewMs
-    );
-  }
-
-  private refreshAndSave(
-    key: TokenKey,
-    currentToken: TokenRecord,
-    options: TokenManagerRequestOptions,
-    binding: OAuthProviderBinding,
-  ): Promise<TokenRecord> {
-    const lockKey = serializeTokenKey(key);
-    const existingRefresh = this.refreshLocks.get(lockKey);
-    if (existingRefresh) return existingRefresh;
-
-    const refresh = this.refreshAndPersist(
-      key,
-      currentToken,
-      options,
-      binding,
-    ).finally(() => {
-      this.refreshLocks.delete(lockKey);
-    });
-    this.refreshLocks.set(lockKey, refresh);
-    return refresh;
-  }
-
-  private async refreshAndPersist(
-    key: TokenKey,
-    currentToken: TokenRecord,
-    options: TokenManagerRequestOptions,
-    binding: OAuthProviderBinding,
-  ): Promise<TokenRecord> {
-    if (!currentToken.refreshToken) throw new MissingRefreshTokenError();
-
-    const provider = binding.adapter;
-    const startedAt = this.now();
-    this.emit({
-      level: "debug",
-      operation: "token.refresh",
-      provider: key.provider,
-      outcome: "started",
-      details: { hadRefreshToken: true },
-    });
-
-    let refreshedToken: unknown;
-    try {
-      refreshedToken = await provider.refreshToken({
-        key,
-        refreshToken: currentToken.refreshToken,
-        currentToken,
-        metadata: options.metadata,
-      });
-      assertTokenRecord(
-        refreshedToken,
-        `${providerDisplayName(key.provider)} refreshToken returned an invalid token record`,
-      );
-      this.emit({
-        level: "info",
-        operation: "token.refresh",
-        provider: key.provider,
-        outcome: "succeeded",
-        durationMs: this.now() - startedAt,
-        details: { hadRefreshToken: true },
-      });
-    } catch (error) {
-      this.emitFailure("token.refresh", key.provider, error, startedAt, {
-        hadRefreshToken: true,
-      });
-      throw error;
-    }
-
-    const nextToken = {
-      ...currentToken,
-      ...refreshedToken,
-      refreshToken: refreshedToken.refreshToken ?? currentToken.refreshToken,
-    };
-    assertTokenRecord(
-      nextToken,
-      "Refreshed token is invalid before persistence",
-    );
-    await this.persist(key, nextToken, binding.store);
-    return nextToken;
-  }
-
-  private load(
-    key: TokenKey,
-    binding: ProviderBinding,
-  ): Promise<TokenRecord | null> {
-    if (isSourcedStaticProviderBinding(binding)) {
-      return this.loadFromSource(key, binding);
-    }
-    return this.loadFromStore(key, binding.store);
-  }
-
-  private async loadFromSource(
-    key: TokenKey,
-    binding: SourcedStaticProviderBinding<unknown>,
-  ): Promise<TokenRecord | null> {
-    return this.observeLoad(key, async () => {
-      const credential = await binding.source.get(key);
-      if (credential === null) return null;
-
-      const token: unknown = binding.adapter.createToken(credential, { key });
-      assertTokenRecord(
-        token,
-        `${providerDisplayName(key.provider)} createToken returned an invalid token record`,
-      );
-      return token;
-    });
-  }
-
-  private loadFromStore(
-    key: TokenKey,
-    store: TokenStore,
-  ): Promise<TokenRecord | null> {
-    return this.observeLoad(key, async () => {
-      const token: unknown = await store.get(key);
-      if (token !== null) {
-        assertTokenRecord(token, "Token loaded from storage is invalid");
-      }
-      return token;
-    });
-  }
-
-  private async observeLoad(
-    key: TokenKey,
-    load: () => Promise<TokenRecord | null>,
-  ): Promise<TokenRecord | null> {
-    const startedAt = this.now();
-    this.emit({
-      level: "debug",
-      operation: "token.load",
-      provider: key.provider,
-      outcome: "started",
-    });
-
-    try {
-      const token = await load();
-      this.emit({
-        level: "debug",
-        operation: "token.load",
-        provider: key.provider,
-        outcome: "succeeded",
-        durationMs: this.now() - startedAt,
-      });
-      return token;
-    } catch (error) {
-      this.emitFailure("token.load", key.provider, error, startedAt);
-      throw error;
-    }
-  }
-
-  private async persist(
-    key: TokenKey,
-    token: unknown,
-    store: TokenStore,
-  ): Promise<void> {
-    const startedAt = this.now();
-    this.emit({
-      level: "debug",
-      operation: "token.persist",
-      provider: key.provider,
-      outcome: "started",
-    });
-
-    try {
-      assertTokenRecord(token, "Token is invalid before persistence");
-      await store.put(key, token);
-      this.emit({
-        level: "info",
-        operation: "token.persist",
-        provider: key.provider,
-        outcome: "succeeded",
-        durationMs: this.now() - startedAt,
-      });
-    } catch (error) {
-      this.emitFailure("token.persist", key.provider, error, startedAt);
-      throw error;
-    }
-  }
-
-  private emitFailure(
-    operation: ConnectionsEvent["operation"],
-    provider: string,
-    error: unknown,
-    startedAt: number,
-    details: Record<string, unknown> = {},
-  ): void {
-    const event: ConnectionsEvent = {
-      level: "error",
-      operation,
-      provider,
-      outcome: "failed",
-      durationMs: this.now() - startedAt,
-    };
-
-    if (error instanceof OAuthProviderError) {
-      event.status = error.status;
-      event.errorCode = error.oauthErrorCode ?? error.code;
-      event.details = {
-        ...details,
-        ...error.details,
-        ...(error.cause !== undefined
-          ? {
-              causeName:
-                error.cause instanceof Error
-                  ? error.cause.name
-                  : typeof error.cause,
-            }
-          : {}),
-      };
-    } else if (error instanceof InvalidTokenRecordError) {
-      event.errorCode = error.code;
-      event.details = { ...details, invalidFields: error.fields };
-    } else {
-      event.details = {
-        ...details,
-        causeName: error instanceof Error ? error.name : typeof error,
-      };
-    }
-    this.emit(event);
-  }
-
-  private emit(event: ConnectionsEvent): void {
-    if (!this.onEvent) return;
-    try {
-      const result = (this.onEvent as (value: ConnectionsEvent) => unknown)(event);
-      if (result instanceof Promise) void result.catch(() => {});
-    } catch (_) {
-      // Observability must never affect token handling.
-    }
-  }
-
-  private getBinding(provider: string): ProviderBinding {
-    const binding = this.bindings.get(provider);
-    if (!binding) throw new ProviderNotRegisteredError(provider);
-    return binding;
-  }
-
-  private getOAuthBinding(
-    provider: string,
-    capability: "authorizationUrl" | "exchangeCode",
-  ): OAuthProviderBinding {
-    const binding = this.getBinding(provider);
-    if (!isOAuthProvider(binding.adapter)) {
-      throw new ProviderCapabilityError(provider, capability);
-    }
-    return binding as OAuthProviderBinding;
+export interface PromiseReadManager<
+  Credentials,
+  ActionRequirements = never,
+  InspectionRequirements = ActionRequirements,
+  RemovalRequirements = ActionRequirements,
+> {
+  readonly credentials: (id: string) => Promise<Credentials>
+  readonly credentialUse: (id: string) => Promise<PromiseCredentialUse<Credentials>>
+  readonly inspect: (id: string) => Promise<ConnectionInspection>
+  readonly remove: (id: string) => Promise<void>
+  readonly effect: {
+    readonly credentials: (
+      id: string,
+    ) => EffectType.Effect<Credentials, ReadCredentialFailure, ActionRequirements>
+    readonly credentialUse: (
+      id: string,
+    ) => EffectType.Effect<
+      CredentialUse<Credentials, ActionRequirements>,
+      ReadCredentialFailure,
+      ActionRequirements
+    >
+    readonly inspect: (
+      id: string,
+    ) => EffectType.Effect<ConnectionInspection, InspectionFailure, InspectionRequirements>
+    readonly remove: (id: string) => EffectType.Effect<void, RemovalFailure, RemovalRequirements>
   }
 }
 
-function providerDisplayName(provider: string): string {
-  return provider.length > 0
-    ? `${provider[0]!.toUpperCase()}${provider.slice(1)}`
-    : "Provider";
+export interface ReplaceOptions {
+  readonly replace?: boolean
+}
+
+export interface PromiseApiKeyManager<
+  Credentials,
+  ActionRequirements = never,
+  InspectionRequirements = ActionRequirements,
+  RemovalRequirements = ActionRequirements,
+> extends PromiseReadManager<
+  Credentials,
+  ActionRequirements,
+  InspectionRequirements,
+  RemovalRequirements
+> {
+  readonly setApiKey: (id: string, apiKey: string, options?: ReplaceOptions) => Promise<void>
+  readonly effect: PromiseReadManager<
+    Credentials,
+    ActionRequirements,
+    InspectionRequirements,
+    RemovalRequirements
+  >['effect'] & {
+    readonly setApiKey: (
+      id: string,
+      apiKey: string,
+      options?: ReplaceOptions,
+    ) => EffectType.Effect<void, CredentialConfigurationFailure, ActionRequirements>
+  }
+}
+
+export interface PromiseClientCredentialsManager<
+  Source,
+  Credentials,
+  ActionRequirements = never,
+  InspectionRequirements = ActionRequirements,
+  RemovalRequirements = ActionRequirements,
+> extends PromiseReadManager<
+  Credentials,
+  ActionRequirements,
+  InspectionRequirements,
+  RemovalRequirements
+> {
+  readonly setClientCredentials: (
+    id: string,
+    source: Source,
+    options?: ReplaceOptions,
+  ) => Promise<void>
+  readonly effect: PromiseReadManager<
+    Credentials,
+    ActionRequirements,
+    InspectionRequirements,
+    RemovalRequirements
+  >['effect'] & {
+    readonly setClientCredentials: (
+      id: string,
+      source: Source,
+      options?: ReplaceOptions,
+    ) => EffectType.Effect<void, CredentialConfigurationFailure, ActionRequirements>
+  }
+}
+
+export interface AuthorizationOptions extends ReplaceOptions {
+  readonly binding: string
+}
+
+export interface CompleteAuthorizationOptions {
+  readonly callbackUrl: string
+  readonly binding: string
+  readonly authorize: (target: AuthorizationTarget) => Promise<void> | void
+}
+
+export interface PromiseOAuthManager<
+  Credentials,
+  ActionRequirements = never,
+  InspectionRequirements = ActionRequirements,
+  RemovalRequirements = ActionRequirements,
+> extends PromiseReadManager<
+  Credentials,
+  ActionRequirements,
+  InspectionRequirements,
+  RemovalRequirements
+> {
+  readonly startAuthorization: (
+    id: string,
+    options: AuthorizationOptions,
+  ) => Promise<AuthorizationStart>
+  readonly completeAuthorization: (
+    options: CompleteAuthorizationOptions,
+  ) => Promise<{ connectionId: string }>
+  readonly effect: PromiseReadManager<
+    Credentials,
+    ActionRequirements,
+    InspectionRequirements,
+    RemovalRequirements
+  >['effect'] & {
+    readonly startAuthorization: (
+      id: string,
+      options: AuthorizationOptions,
+    ) => EffectType.Effect<AuthorizationStart, AuthorizationFailure, ActionRequirements>
+    readonly completeAuthorization: (
+      options: CompleteAuthorizationOptions,
+    ) => EffectType.Effect<
+      { connectionId: string },
+      AuthorizationFailure | unknown,
+      ActionRequirements
+    >
+  }
+}
+
+export interface EnrollCodeOptions extends ReplaceOptions {
+  readonly code: string
+  readonly authorize: () => Promise<void> | void
+}
+
+export interface PromiseSelfClientManager<
+  Credentials,
+  ActionRequirements = never,
+  InspectionRequirements = ActionRequirements,
+  RemovalRequirements = ActionRequirements,
+> extends PromiseReadManager<
+  Credentials,
+  ActionRequirements,
+  InspectionRequirements,
+  RemovalRequirements
+> {
+  readonly enrollCode: (id: string, options: EnrollCodeOptions) => Promise<void>
+  readonly effect: PromiseReadManager<
+    Credentials,
+    ActionRequirements,
+    InspectionRequirements,
+    RemovalRequirements
+  >['effect'] & {
+    readonly enrollCode: (
+      id: string,
+      options: EnrollCodeOptions,
+    ) => EffectType.Effect<void, AuthorizationFailure | unknown, ActionRequirements>
+  }
+}
+
+type PromiseProvider =
+  | ApiKeyProviderDefinition<unknown, never>
+  | OAuthProviderDefinition<unknown, never>
+  | SelfClientProviderDefinition<unknown, never>
+  | ClientCredentialsProviderDefinition<never, unknown, never>
+
+type PromiseStore = ConnectionStore<unknown, never, unknown, never>
+type AnyInvocationBoundPromiseStore = InvocationBoundPromiseStore<
+  unknown,
+  unknown,
+  unknown,
+  unknown
+>
+
+type PromiseManagerFor<
+  Provider extends PromiseProvider,
+  ActionRequirements = never,
+  InspectionRequirements = ActionRequirements,
+  RemovalRequirements = ActionRequirements,
+> =
+  Provider extends ApiKeyProviderDefinition<infer Credentials, never>
+    ? PromiseApiKeyManager<
+        Credentials,
+        ActionRequirements,
+        InspectionRequirements,
+        RemovalRequirements
+      >
+    : Provider extends ClientCredentialsProviderDefinition<infer Source, infer Credentials, never>
+      ? PromiseClientCredentialsManager<
+          Source,
+          Credentials,
+          ActionRequirements,
+          InspectionRequirements,
+          RemovalRequirements
+        >
+      : Provider extends SelfClientProviderDefinition<unknown, never>
+        ? PromiseSelfClientManager<
+            ProviderCredentials<Provider>,
+            ActionRequirements,
+            InspectionRequirements,
+            RemovalRequirements
+          >
+        : Provider extends OAuthProviderDefinition<infer Credentials, never>
+          ? PromiseOAuthManager<
+              Credentials,
+              ActionRequirements,
+              InspectionRequirements,
+              RemovalRequirements
+            >
+          : never
+
+type ManagerEffect<Manager> = Manager extends { readonly effect: infer Effect } ? Effect : never
+
+/** @internal Carrier returned only for stores requiring invocation services. */
+export interface UnboundPromiseManager<
+  Manager,
+  ActionRequirements,
+  InspectionRequirements,
+  RemovalRequirements = ActionRequirements,
+> {
+  readonly effect: ManagerEffect<Manager>
+  readonly [bindPromiseManager]: (
+    runners: PromiseManagerRunners<ActionRequirements, InspectionRequirements, RemovalRequirements>,
+  ) => Manager
+}
+
+function makeReadManager<
+  Credentials,
+  ActionRequirements,
+  InspectionRequirements,
+  RemovalRequirements,
+>(
+  workflow: Pick<
+    ApiKeyWorkflow<Credentials, ActionRequirements, InspectionRequirements, RemovalRequirements>,
+    'credentials' | 'inspect' | 'remove'
+  >,
+  identity: (id: string) => ConnectionIdentity,
+  runners: PromiseManagerRunners<ActionRequirements, InspectionRequirements, RemovalRequirements>,
+): PromiseReadManager<
+  Credentials,
+  ActionRequirements,
+  InspectionRequirements,
+  RemovalRequirements
+> {
+  const effect = Object.freeze({
+    credentialUse: (id: string) => workflow.credentials(identity(id)),
+    credentials: (id: string) =>
+      workflow.credentials(identity(id)).pipe(Effect.map((use) => use.credentials)),
+    inspect: (id: string) => workflow.inspect(identity(id)),
+    remove: (id: string) => workflow.remove(identity(id)),
+  })
+
+  return Object.freeze({
+    credentials: (id: string) => runners.action(effect.credentials(id)),
+    credentialUse: (id: string) =>
+      runners.action(effect.credentialUse(id)).then((use) => ({
+        credentials: use.credentials,
+        reportRejected: () => runners.action(use.reportRejected()),
+      })),
+    inspect: (id: string) => runners.inspection(effect.inspect(id)),
+    remove: (id: string) => runners.removal(effect.remove(id)),
+    effect,
+  })
+}
+
+function makePromiseFacade<Requirements, InspectionRequirements>(options: {
+  readonly store: ConnectionStore<unknown, Requirements, unknown, InspectionRequirements>
+  readonly provider: PromiseProvider
+  readonly runners: PromiseManagerRunners<Requirements, InspectionRequirements, Requirements>
+}):
+  | PromiseReadManager<unknown, Requirements, InspectionRequirements>
+  | PromiseApiKeyManager<unknown, Requirements, InspectionRequirements>
+  | PromiseClientCredentialsManager<never, unknown, Requirements, InspectionRequirements>
+  | PromiseSelfClientManager<unknown, Requirements, InspectionRequirements>
+  | PromiseOAuthManager<unknown, Requirements, InspectionRequirements> {
+  const { provider, store, runners } = options
+  const namespace = 'default'
+  const identity = (connectionId: string): ConnectionIdentity => ({
+    namespace,
+    providerId: provider.id,
+    connectionId,
+  })
+  if ('prepareApiKey' in provider) {
+    const workflow = makeApiKeyWorkflow({ provider, store })
+    const read = makeReadManager(workflow, identity, runners)
+    const setApiKey = (id: string, apiKey: string, options?: ReplaceOptions) =>
+      workflow.setApiKey(identity(id), {
+        apiKey: Redacted.make(apiKey),
+        intent: options?.replace === true ? 'replace' : 'enroll',
+      })
+    return Object.freeze({
+      ...read,
+      setApiKey: (id: string, apiKey: string, options?: ReplaceOptions) =>
+        runners.action(setApiKey(id, apiKey, options)),
+      effect: Object.freeze({ ...read.effect, setApiKey }),
+    })
+  }
+  if ('acquireCredentials' in provider) {
+    const workflow = makeClientCredentialsWorkflow({ provider, store })
+    const read = makeReadManager(workflow, identity, runners)
+    const setClientCredentials = (id: string, source: never, options?: ReplaceOptions) =>
+      workflow.setClientCredentials(identity(id), {
+        credentials: source,
+        intent: options?.replace === true ? 'replace' : 'enroll',
+      })
+    return Object.freeze({
+      ...read,
+      setClientCredentials: (id: string, source: never, options?: ReplaceOptions) =>
+        runners.action(setClientCredentials(id, source, options)),
+      effect: Object.freeze({ ...read.effect, setClientCredentials }),
+    })
+  }
+  if ('exchangeSelfClientCode' in provider) {
+    const workflow = makeSelfClientWorkflow({ provider, store })
+    const read = makeReadManager(workflow, identity, runners)
+    const enrollCode = (id: string, options: EnrollCodeOptions) =>
+      workflow.enrollCode(identity(id), {
+        code: Redacted.make(options.code),
+        intent: options.replace === true ? 'replace' : 'enroll',
+        authorize: () =>
+          Effect.tryPromise({
+            try: () => Promise.resolve(options.authorize()),
+            catch: (error) => error,
+          }),
+      })
+    return Object.freeze({
+      ...read,
+      enrollCode: (id: string, options: EnrollCodeOptions) =>
+        runners.action(enrollCode(id, options)),
+      effect: Object.freeze({ ...read.effect, enrollCode }),
+    })
+  }
+  const workflow = makeOAuthWorkflow({ namespace, provider, store })
+  const read = makeReadManager(workflow, identity, runners)
+  const startAuthorization = (id: string, options: AuthorizationOptions) =>
+    workflow.startAuthorization(identity(id), {
+      binding: options.binding,
+      intent: options.replace === true ? 'replace' : 'enroll',
+    })
+  const completeAuthorization = (options: CompleteAuthorizationOptions) =>
+    workflow
+      .completeAuthorization({
+        callbackUrl: options.callbackUrl,
+        binding: options.binding,
+        authorize: (target) =>
+          Effect.tryPromise({
+            try: () => Promise.resolve(options.authorize(target)),
+            catch: (error) => error,
+          }),
+      })
+      .pipe(Effect.map(({ connectionId }) => ({ connectionId })))
+  return Object.freeze({
+    ...read,
+    startAuthorization: (id: string, options: AuthorizationOptions) =>
+      runners.action(startAuthorization(id, options)),
+    completeAuthorization: (options: CompleteAuthorizationOptions) =>
+      runners.action(completeAuthorization(options)),
+    effect: Object.freeze({ ...read.effect, startAuthorization, completeAuthorization }),
+  })
+}
+
+function makeUnboundPromiseManager(options: {
+  readonly store: AnyInvocationBoundPromiseStore
+  readonly provider: PromiseProvider
+}): unknown {
+  const { store, provider } = options
+  const unavailable: PromiseEffectRunner<unknown> = () =>
+    Promise.reject(
+      new Error('Bind this manager to its current invocation before using Promise methods'),
+    )
+  const build = (runners: PromiseManagerRunners<unknown, unknown, unknown>) =>
+    makePromiseFacade({ store, provider, runners })
+  const unbound = build({ action: unavailable, inspection: unavailable, removal: unavailable })
+  return Object.freeze({
+    effect: unbound.effect,
+    [bindPromiseManager]: build,
+  })
+}
+
+export function makeManager<Provider extends PromiseProvider>(options: {
+  readonly store: PromiseStore
+  readonly provider: Provider
+}): PromiseManagerFor<Provider>
+export function makeManager<
+  Provider extends PromiseProvider,
+  Error,
+  Requirements,
+  InspectionError,
+  InspectionRequirements,
+>(options: {
+  readonly store: InvocationBoundPromiseStore<
+    Error,
+    Requirements,
+    InspectionError,
+    InspectionRequirements
+  >
+  readonly provider: Provider
+}): UnboundPromiseManager<
+  PromiseManagerFor<Provider, Requirements, InspectionRequirements, Requirements>,
+  Requirements,
+  InspectionRequirements
+>
+export function makeManager(options: {
+  readonly store: PromiseStore | AnyInvocationBoundPromiseStore
+  readonly provider: PromiseProvider
+}): unknown {
+  if (invocationBoundPromiseStore in options.store) {
+    return makeUnboundPromiseManager({ store: options.store, provider: options.provider })
+  }
+  const runPromise: PromiseEffectRunner<never> = <Value, Error>(
+    operation: EffectType.Effect<Value, Error, never>,
+  ) => Effect.runPromise(operation)
+  return makePromiseFacade({
+    store: options.store,
+    provider: options.provider,
+    runners: { action: runPromise, inspection: runPromise, removal: runPromise },
+  })
+}
+
+export function revealSecret(secret: Redacted.Redacted<string>): string {
+  return Redacted.value(secret)
 }

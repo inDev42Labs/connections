@@ -1,93 +1,48 @@
 ---
 name: connections
-description: Integrate or extend @indev42/connections for OAuth flows, static API credentials, token storage, credential sources, token encryption, provider adapters, or TokenManager error handling. Use when application code installs, configures, or debugs this library.
+description: >
+  Work with @indev42/connections credentials, authorization, providers, and stores.
+  Read the getting-started guide for the built-in Promise interface and the
+  Effect guide for composition. Use the reference for supported integrations
+  and the provider and store catalogs for integration-specific setup.
+metadata:
+  type: core
+  library: '@indev42/connections'
+  library_version: '0.0.0'
+sources:
+  - 'inDev42Labs/connections:README.md'
+  - 'inDev42Labs/connections:CONTEXT.md'
+  - 'inDev42Labs/connections:docs/getting-started.md'
+  - 'inDev42Labs/connections:docs/effect.md'
+  - 'inDev42Labs/connections:docs/reference.md'
+  - 'inDev42Labs/connections:docs/providers/*.md'
+  - 'inDev42Labs/connections:docs/stores/*.md'
+  - 'inDev42Labs/connections:src/index.ts'
 ---
 
-# Use @indev42/connections
+# Connections
 
-Use the library as the credential boundary between application code and external services. Let `TokenManager` select provider bindings, load and validate records, refresh OAuth tokens, and persist or revoke them.
+Connections supplies credentials for an application-owned connection to an external provider. The application owns authentication, authorization, OAuth routes, store deployment, provider API calls, and its mapping from users or tenants to connection IDs.
 
-## Implement an integration
+## Read the right page
 
-1. Inspect the target project's package manager, runtime, installed `@indev42/connections` version, and existing auth/storage conventions. If the package is installed, treat its exported declarations and bundled README as the API source of truth. Complete this step when the intended imports and runtime dependencies exist in that version.
-2. Define one stable `TokenKey` scheme before writing handlers:
-   - `provider`: the application's binding namespace.
-   - `accountId`: the owning user, tenant, workspace, or external account.
-   - `connectionId`: an optional discriminator for multiple connections under the same provider and account.
-   Complete this step when every operation for one connection derives the same key.
-3. Choose exactly one binding shape:
-   - OAuth: `{ adapter, store }`
-   - App-managed static credential: `{ adapter, store }`, then `saveCredential`
-   - Externally managed static credential: `{ adapter, source }`
-   Never combine `store` and `source` in one binding. Complete this step when credential ownership and mutability are explicit.
-4. Load only the reference for the selected branch:
-   - OAuth with Zoho, Salesforce, or a custom OAuth adapter: [references/oauth.md](references/oauth.md)
-   - Static API keys and environment-backed credentials: [references/static-credentials.md](references/static-credentials.md)
-   - Memory, Neon, Convex, or encrypted persistence: [references/storage.md](references/storage.md)
-   - Custom providers, stores, sources, or encryption: [references/extensions.md](references/extensions.md)
-5. Construct a long-lived server-side `TokenManager`. Reuse it across requests when the runtime permits so concurrent refreshes for the same key can be deduplicated. Keep provider secrets, authorization codes, tokens, and encryption keys out of client bundles and logs. Complete this step when all registered namespaces match the `provider` values used by callers.
-6. Route application operations through the manager:
-   - Start OAuth with `getAuthorizationUrl`.
-   - Finish OAuth with `exchangeCodeAndSave`.
-   - Save an app-managed static credential with `saveCredential`.
-   - Retrieve request credentials with `getValidAccessToken` or `getValidToken`.
-   - Disconnect a writable binding with `revoke`.
-   Complete this step when application code no longer refreshes or mutates stored token records independently.
-7. Verify the integration with the project's typecheck and tests. Exercise the missing-token path, provider callback or static load path, retrieval path, and disconnect/rotation path. Complete this step when credentials remain secret in output and each exercised operation uses the expected complete `TokenKey`.
+1. Read [Get credentials for a connection](../../docs/getting-started.md) for the implemented built-in setup and retrieval paths. Supply the application-owned permissions and provider requests shown as placeholders.
+2. Read [Reference](../../docs/reference.md) for provider and store choices, method behavior, and error categories. Follow the [provider catalog](../../docs/reference.md#providers) links for provider-specific setup and constraints.
+3. Read [Use Connections with Effect](../../docs/effect.md) when composing `manager.effect` operations, handling their failures, or running an Effect program.
+4. Read [Using Connections with Convex](../../docs/stores/convex.md) or [PostgreSQL](../../docs/stores/postgresql.md) only when that adapter is in use. Read the reference's [supported integrations](../../docs/reference.md#supported-integrations) and [retrieval failures](../../docs/reference.md#handle-retrieval-failures) for extension and recovery boundaries.
 
-## Core pattern
+Treat the linked consumer docs as the authoritative target. In a source checkout, read the root `AGENTS.md` and `CONSTITUTION.md` before changes, then use `specs/README.md` to find technical clarification and verification paths. Specs do not override docs; prior targets remain in Git. Verify implementation claims in `src/index.ts`, tests, and the relevant adapter. Stop and ask the owner if implementation requires an undocumented public contract. Custom-provider, custom-store, and custom-encryptor extension APIs are deferred. Do not add restrictions solely to block unsupported structural use or claim arbitrary Effect-service Promise execution.
 
-```ts
-import {
-  MemoryTokenStore,
-  TokenManager,
-  ZohoOAuthProvider,
-} from "@indev42/connections";
+## Preserve lifecycle safety
 
-const store = new MemoryTokenStore(); // Replace for durable deployments.
+- Authenticate and authorize every application-facing action. A connection ID is an identifier, not permission to use the connection.
+- Keep access tokens, API keys, source credentials, refresh tokens, and encryption keys on the server. Reveal redacted secrets only where an SDK or HTTP request needs a string. The built-in Promise interface exports `revealSecret` from Connections; Effect-native callers can still use `Redacted.value` from `effect`.
+- Bind browser OAuth to trusted, server-verified session evidence. Check permission for the connection ID recovered from the callback attempt before exchanging the code.
+- Report a credential as rejected only after the application's provider request confirms an authentication rejection. Bind the report to that exact credential read; do not invalidate a newer credential.
+- Do not retry a possibly consumed one-use code or rotated refresh credential merely because a worker lost the provider response. Return an actionable failure when safe renewal is unknown.
+- Keep provider API requests outside the credential lifecycle. `remove` deletes local authorization; it does not revoke provider-side authorization.
+- Preserve equivalent results, failures, and lifecycle guarantees through Promise methods and `manager.effect`. The feature contract does not prescribe shared implementation or internal use of Effect. Bind Convex's context within the current action, never in a module-global runtime.
 
-export const connections = new TokenManager({
-  providers: {
-    zoho: {
-      adapter: new ZohoOAuthProvider({
-        credentials: {
-          clientId: process.env.ZOHO_CLIENT_ID!,
-          clientSecret: process.env.ZOHO_CLIENT_SECRET!,
-        },
-        defaultScopes: ["ZohoCRM.modules.READ"],
-        accessType: "offline",
-        prompt: "consent",
-      }),
-      store,
-    },
-  },
-});
-```
+## Verify implementation work
 
-Memory storage is suitable for tests, local development, and short-lived processes, not durable multi-instance deployments.
-
-## Preserve these semantics
-
-- Treat the binding map key as durable data. It participates in lookup, persistence identity, encryption context, events, and provider request context. Renaming it requires migrating stored and encrypted records.
-- Use epoch milliseconds for `TokenRecord.expiresAt`.
-- Let `TokenManager` decide whether an OAuth token needs refresh. `refreshSkewMs` defaults to 60 seconds, while static credentials ignore the skew and expire at their exact `expiresAt`.
-- Treat a token with no `expiresAt` as locally usable, not externally verified. The library does not contact a service merely to prove validity.
-- Use `connectionId` consistently. Omitting it and setting it produce different persistence identities.
-- Prefer `getValidAccessToken` when only the credential string is needed. Use `getValidToken` only when token type, scopes, or metadata are required.
-- Use `saveToken` only for an already normalized `TokenRecord`. Use `saveCredential` to ask a static provider to normalize a raw credential. Do not introduce the deprecated `saveInitialToken` alias.
-- Treat source-backed bindings as read-only. Rotate or delete the external source rather than calling `saveToken`, `saveCredential`, or `revoke`.
-- Do not log token records, raw credentials, authorization codes, client secrets, encrypted payloads, or provider response bodies. `onEvent` is the intended sanitized observability boundary.
-
-## Handle expected failures
-
-Catch narrowly at HTTP or job boundaries and map failures without exposing secrets:
-
-- `TokenNotFoundError`: no stored or sourced credential exists; prompt reconnection or configuration.
-- `TokenExpiredError` (`TOKEN_EXPIRED`): a static token reached its known expiration.
-- `MissingRefreshTokenError`: an expiring OAuth record cannot refresh; prompt reconnection.
-- `ProviderNotRegisteredError` (`PROVIDER_NOT_REGISTERED`): the key's namespace has no binding.
-- `ProviderCapabilityError` (`PROVIDER_CAPABILITY_UNAVAILABLE`): the selected binding does not support the requested operation.
-- `OAuthProviderError` (`OAUTH_PROVIDER_ERROR`): the remote OAuth service rejected or malformed an operation; use its sanitized `status`, `oauthErrorCode`, and `details` for diagnostics.
-- `InvalidTokenRecordError` (`INVALID_TOKEN_RECORD`): malformed data crossed a provider, manager, serialization, or storage boundary.
-
-Preserve the original error as the server-side cause when translating it to an application error. Return a generic client-safe message.
+In a source checkout, read `package.json` for current commands. Run `bun run check` and the relevant adapter integration tests. For public-interface changes, exercise the same lifecycle through Promise and Effect, Convex invocation binding when applicable, and package imports. Read runner prerequisites before full verification; local backend downloads and fixture installs may require network access. Obtain explicit permission before contacting external services or testing a real PostgreSQL backend. Do not infer configured integrations or deployments from code or local substitutes.

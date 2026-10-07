@@ -1,0 +1,16 @@
+{
+  "extends": "../../../../tsconfig.json",
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "rootDir": "../../..",
+    "outDir": "../../../../dist",
+    "declaration": true,
+    "emitDeclarationOnly": false,
+    "noEmit": false,
+    "types": []
+  },
+  "include": ["./**/*.ts"]
+}

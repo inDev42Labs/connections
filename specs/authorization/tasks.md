@@ -1,0 +1,5 @@
+# Authorization TODOs
+
+Deferred follow-up from the independent review of `65a078b`. Recording this task does not authorize changes to consumer docs.
+
+- [ ] TODO-005: Add usable Shopify setup guidance. Review finding 5. The [provider catalog](../../docs/reference.md#providers) says provider-specific configuration is required but does not explain it. Draft `docs/providers/shopify.md` covering minimal configuration, the supported token mode, trusted shop selection and callback handling, returned credentials, and stable-configuration and recovery constraints. Verify claims against [`Shopify configuration`](../../src/providers/shopify/shopify.ts), [`response validation and projection`](../../src/providers/shopify/responses.ts), and [`transport policy`](../../src/providers/shopify/transport.ts). Link the guide from the catalog and keep shared workflows in getting started and the reference. Obtain owner approval before editing `docs/`; do not claim live-provider verification from local substitutes. Coordinate recovery wording with [TODO-004](../credential-lifecycle/tasks.md).

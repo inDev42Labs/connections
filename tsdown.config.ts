@@ -1,31 +1,27 @@
-import { defineConfig } from "tsdown";
+import { defineConfig } from 'tsdown'
 
 export default defineConfig({
   entry: {
-    index: "index.ts",
-    "core/index": "src/core/index.ts",
-    "encryptors/index": "src/encryptors/index.ts",
-    "encryptors/aes-gcm/index": "src/encryptors/aes-gcm/index.ts",
-    "providers/dummy/index": "src/providers/dummy/index.ts",
-    "providers/retell/index": "src/providers/retell/index.ts",
-    "providers/salesforce/index": "src/providers/salesforce/index.ts",
-    "providers/zoho/index": "src/providers/zoho/index.ts",
-    "sources/index": "src/sources/index.ts",
-    "sources/environment/index": "src/sources/environment/index.ts",
-    "stores/convex/index": "src/stores/convex/index.ts",
-    "stores/memory/index": "src/stores/memory/index.ts",
-    "stores/neon/index": "src/stores/neon/index.ts",
+    index: 'src/index.ts',
+    'encryptors/aes-gcm': 'src/encryptors/aes-gcm/index.ts',
+    'providers/api-key': 'src/providers/api-key/index.ts',
+    'providers/salesforce': 'src/providers/salesforce/index.ts',
+    'providers/shopify': 'src/providers/shopify/index.ts',
+    'providers/yotpo': 'src/providers/yotpo/index.ts',
+    'providers/zoho': 'src/providers/zoho/index.ts',
+    configuration: 'src/configuration/index.ts',
+    'stores/convex': 'src/stores/convex/index.ts',
+    'stores/memory': 'src/stores/memory/index.ts',
+    'stores/sqlite': 'src/stores/sqlite/index.ts',
+    'stores/postgresql': 'src/stores/postgresql/index.ts',
   },
-  attw: {
-    level: "error",
-    profile: "esm-only",
+  deps: {
+    neverBundle: true,
+    dts: {
+      neverBundle: true,
+    },
   },
-  dts: true,
-  exports: false,
-  fixedExtension: false,
-  format: "esm",
-  platform: "neutral",
-  publint: true,
-  sourcemap: true,
-  target: "es2022",
-});
+  dts: {
+    tsgo: true,
+  },
+})

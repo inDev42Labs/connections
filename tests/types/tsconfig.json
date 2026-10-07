@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "noEmit": true,
+    "types": ["bun", "node", "vite/client", "vitest/globals"]
+  },
+  "include": ["../../src/**/*.ts", "../**/*.ts"],
+  "exclude": ["../package/**", "../process-loss/**", "../stores/convex/local/**"]
+}
