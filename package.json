@@ -1,6 +1,6 @@
 {
   "name": "@indev42/connections",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "OAuth, client-credentials, and API-key lifecycle management for app integrations",
   "homepage": "https://github.com/inDev42Labs/connections#readme",
   "bugs": {
