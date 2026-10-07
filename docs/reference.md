@@ -19,7 +19,7 @@ The store persists encrypted credentials; the provider definition describes how 
 | `credentials(id)` | Return provider-specific usable credentials; safely renew when necessary. | Fails rather than returning known expired credentials. |
 | `credentialUse(id)` | Return `{ credentials, reportRejected() }`. | Report only a confirmed rejection of that read; a stale report cannot invalidate newer credentials. |
 | `inspect(id)` | Read local, non-secret status without decrypting or refreshing. | Does not prove the provider will accept the credentials. |
-| `remove(id)` | Remove locally stored authorization. | Does not revoke access at the provider. |
+| `remove(id)` | Remove locally stored authorization and cancel earlier local enrollment work. | Does not revoke access at the provider. |
 | `setApiKey(id, apiKey, options?)` | Enroll a new opaque key; `{ replace: true }` replaces an existing one. | Enrollment fails if a key exists; replacement fails if none exists. |
 | `setClientCredentials(id, source, options?)` | Save a provider-specific source; `{ replace: true }` replaces it. | Enrollment fails if a source exists; replacement fails if none exists. The derived credential is acquired on read. |
 | `startAuthorization(id, { binding })` | Start browser OAuth; return `{ url, expiresAt }`. | Requires a trusted server-derived session binding and an unused connection. |
@@ -36,7 +36,7 @@ Methods appear only when the configured provider supports them. `options` defaul
 | `ApiKey.opaque({ id })` | Opaque API key | Choose a stable ID; save a key locally. No provider network request on save. |
 | `Salesforce.oauth({ clientId, clientSecret, redirectUri, scopes })` | Browser OAuth | See [Salesforce browser OAuth](providers/salesforce.md#browser-oauth). |
 | `Salesforce.clientCredentials({ loginUrl })` | Source-to-derived client credentials | See [Salesforce client credentials](providers/salesforce.md#client-credentials). |
-| `Shopify.oauth(...)` | Browser OAuth | Provider-specific app and shop configuration is required. |
+| `Shopify.oauth(...)` | Browser OAuth | See [Shopify app and shop setup](providers/shopify.md). |
 | `Zoho.oauth(...)` | Browser OAuth | See [Zoho browser OAuth](providers/zoho.md#browser-oauth). |
 | `Zoho.selfClient(...)` | Operator-supplied OAuth code | See [Zoho Self Client enrollment](providers/zoho.md#self-client-enrollment). |
 | `Yotpo.clientCredentials({ version: 'v1' })` | Source-to-derived client credentials | Save the Store ID and API secret; derived access credentials are acquired on read. |

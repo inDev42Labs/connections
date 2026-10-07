@@ -269,6 +269,7 @@ try {
     'docs/getting-started.md',
     'docs/reference.md',
     'docs/providers/salesforce.md',
+    'docs/providers/shopify.md',
     'docs/providers/zoho.md',
     'docs/stores/convex.md',
     'docs/stores/postgresql.md',
