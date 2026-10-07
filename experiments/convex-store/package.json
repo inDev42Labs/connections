@@ -1,0 +1,22 @@
+{
+  "name": "connections-convex-store-experiment",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "local": "bun scripts/local.ts"
+  },
+  "dependencies": {
+    "convex": "1.45.0",
+    "effect": "4.0.0-rc.112"
+  },
+  "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
+    "@types/node": "^26.1.1",
+    "convex-test": "0.0.56",
+    "typescript": "^7.0.2",
+    "vitest": "4.1.11"
+  },
+  "packageManager": "bun@1.4.0"
+}

@@ -1,5 +1,13 @@
-export { SalesforceOAuthProvider } from "./SalesforceOAuthProvider";
+export { clientCredentials } from './client-credentials.js'
 export type {
-  SalesforceEnvironment,
-  SalesforceOAuthProviderOptions,
-} from "./salesforce.types";
+  SalesforceClientCredentials,
+  SalesforceClientCredentialsOptions,
+  SalesforceSourceCredentials,
+} from './client-credentials.js'
+export { oauth } from './salesforce.js'
+export type { SalesforceCredentials, SalesforceOAuth } from './salesforce.js'
+
+import { oauth } from './salesforce.js'
+import { clientCredentials } from './client-credentials.js'
+
+export const Salesforce = { oauth, clientCredentials } as const

@@ -1,0 +1,4 @@
+.convex/
+.env*
+.local/
+coverage/

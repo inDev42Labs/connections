@@ -1,0 +1,158 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "promise", "vitest"],
+  "categories": {
+    "correctness": "error"
+  },
+  "ignorePatterns": ["dist/**", "coverage/**", "experiments/**", "**/_generated/**"],
+  "rules": {
+    "import/no-cycle": "error",
+    "no-restricted-imports": "off"
+  },
+  "overrides": [
+    {
+      "files": ["src/core/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)(providers|encryptors|stores|sources)/",
+                "message": "Core may depend only on core and internal mechanisms, never concrete extensions. Depend on a contract from src/core/contracts instead."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/providers/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)((stores|encryptors|sources)/|core/(model|workflow)(/|\\.|$))",
+                "message": "Providers may depend on provider-facing core contracts, not concrete extensions or lifecycle internals."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/encryptors/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)((providers|stores|sources)/|core/(model|workflow)(/|\\.|$))",
+                "message": "Encryptors may depend on encryptor-facing core contracts, not concrete extensions or lifecycle internals."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/stores/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)((providers|encryptors|sources)/|core/(model|workflow)(/|\\.|$))",
+                "message": "Stores may depend on store-facing core contracts, not concrete extensions or lifecycle internals."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/sources/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^|/)((providers|encryptors|stores)/|core/(model|workflow)(/|\\.|$))",
+                "message": "Sources may depend on source-facing core contracts, not concrete extensions or lifecycle internals."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/stores/*/component/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "(^\\.\\./|(^|/)(core|providers|encryptors|sources)/)",
+                "message": "The store component is a self-contained storage boundary; parent adapters, providers, encryptors, sources, and lifecycle policy stay outside them."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/**/promise.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^\\./store(\\.|$)",
+                "message": "Promise adapters provide the Effect layer and execute existing public operations; they do not call storage directly."
+              },
+              {
+                "regex": "(^|/)core/(workflow|model|contracts)(/|\\.|$)",
+                "message": "Promise adapters must execute the public Effect workflow rather than import lifecycle internals."
+              },
+              {
+                "regex": "(^|/)(providers|encryptors|sources|component)(/|\\.|$)",
+                "message": "Promise adapters may not contain concrete extension or component policy."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/index.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^\\./core/(model|workflow)(\\.|/|$)",
+                "message": "Internal lifecycle records and workflow implementation are not part of the root consumer interface."
+              },
+              {
+                "regex": "^\\./core/contracts/store(\\.|$)",
+                "message": "Store adapter contracts are exported from @inDev42/connections/stores."
+              },
+              {
+                "regex": "(^|/)(providers|encryptors|stores|sources)/",
+                "message": "Optional concrete integrations use explicit package subpaths and are not re-exported from the root."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

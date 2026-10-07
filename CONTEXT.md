@@ -1,81 +1,36 @@
-# Connections Context
+# Connections domain
 
-This document defines the domain language used by `@indev42/connections`. It describes current semantics, not proposed APIs or provider-specific behavior.
+This vocabulary describes connections to external systems. It does not prescribe Effect services, storage schemas, or the public interface.
 
-## Connection
+## Core terms
 
-A **connection** is a credential relationship with an external service managed through a provider binding. A connection is identified by a `TokenKey` and represented at runtime by a `TokenRecord`.
+**Connection**: An identifiable relationship through which an application accesses an external system. Its identity can remain stable when credentials refresh, rotate, expire, or are revoked; it need not correspond to a database record.
+_Avoid_: using connection as a synonym for token or stored credential record.
 
-A connection may be persisted as a local token record or derived from an externally managed credential source. Its existence does not guarantee that the external service still accepts the associated credential.
+**Provider**: The external system a connection gives access to, such as Salesforce, Shopify, or Zoho. A provider definition is code describing how the library works with that system, not the external system itself.
+_Avoid_: service when it could be confused with an Effect service.
 
-## Token Key
+**Credential**: Material presented to prove identity or authority, or to obtain further credentials. API keys, client secrets, access tokens, and refresh tokens are specific kinds of credentials; use their specific names when their differences matter.
+_Avoid_: token as an umbrella for all credentials.
 
-A **token key** identifies one connection through three values:
+**Source credential**: A credential retained so that Connections can obtain a derived credential without interactive authorization. A client secret is a source credential; replacing it changes the durable basis for future acquisition.
+_Avoid_: refresh token when the provider instead permits repeated use of the same client credential.
 
-- `provider`: the external service or integration namespace.
-- `accountId`: the application-defined user, tenant, workspace, or external account associated with the connection.
-- `connectionId`: an optional application-defined discriminator for multiple connections to the same provider and account.
+**Derived credential**: A credential obtained from a source credential and returned for protected-resource use. An access token issued through a client credentials grant is a derived credential; it may expire or be rejected while the source credential remains usable.
+_Avoid_: treating rejection or expiry of a derived credential as proof that its source credential is invalid.
 
-The package treats the complete tuple of these values as the connection identity. It does not interpret or validate their meaning with the external service.
+## Distinctions to preserve
 
-## Provider
+- Application credentials, such as an OAuth client secret, are distinct from credentials associated with a particular connection. One application registration can support many connections; the exact relationship depends on the auth mechanism.
+- An OAuth authorization server issues tokens; a resource server handles protected resource requests. A provider may encompass both, but they need not be the same system.
+- OAuth 2.0 is an authorization framework; authorization code and client credentials are grant types; an API key is a credential type. A generic auth-method abstraction has not been agreed.
+- An authorization attempt is one execution of an authorization flow, potentially failing, expiring, or being abandoned. Do not use it as a blanket term for token refresh or API-key configuration.
+- Removing locally stored authorization and revoking authorization at a provider are distinct actions. `remove(id)` removes local authorization only. See [security and ownership](docs/reference.md#security-and-ownership).
+- Ownership belongs to the consuming application's domain. An owner is not necessarily a user, and a required library-level owner model has not been agreed.
+- A provider-specific shop, organization, installation, or account is not necessarily a universal external-account concept. One credential can grant access to multiple resources.
 
-A **provider** is the application-defined namespace under which a provider binding is registered. This namespace is the `provider` value used in token keys, persistence identity, encryption context, events, and provider request context. Renaming it requires migrating persisted records and encrypted values.
+## Technical vocabulary, not domain entities
 
-A **provider adapter** implements a service's credential behavior without owning its registration name. An `OAuthProvider` creates authorization URLs, exchanges authorization codes, refreshes tokens, and may revoke tokens remotely. A `StaticTokenProvider` converts a manually provisioned credential into the service's static token record. Provider operations receive the complete token key selected by the manager.
+Configuration helpers, stores, encryptors, vaults, adapters, Effect services, and layers describe implementation mechanisms. Their names and interfaces remain design choices. In particular, a vault abstraction has not been selected.
 
-## Provider Binding
-
-A **provider binding** associates a service adapter with the storage boundary used for that provider namespace. Bindings allow providers to use separate stores or share the same store. OAuth bindings use a writable token store. Static bindings use either a token store or a read-only credential source. The same adapter type may be registered under multiple provider namespaces with different configuration or storage.
-
-## Token Record
-
-A **token record** is the normalized credential data used by the manager and persisted by token stores. It contains an access token and may contain a refresh token, expiration time, lifecycle, token type, scopes, and provider-specific metadata.
-
-The package validates the shape of token records but does not inspect token contents or verify them with the external service.
-
-## Access Token
-
-An **access token** is the credential returned to the application for authenticating requests to an external service. This term includes opaque credentials such as API tokens when they are managed as token records, even if the external service does not use OAuth.
-
-## Refreshable Token
-
-A **refreshable token** is a token record with `lifecycle: "refreshable"`, a known expiration, and a refresh token that can be passed to a registered OAuth provider. When the expiration is within the manager's refresh window, the manager refreshes and persists the token before returning it.
-
-Having a refresh token does not by itself trigger refresh. Refresh is based on `expiresAt`.
-
-## Static Token
-
-A **static token** is a manually provisioned credential that this package does not acquire or rotate through OAuth. A stored static binding can persist a normalized record with `saveToken` or normalize and persist a raw credential with `saveCredential`. A sourced static binding normalizes its raw credential in memory on each load.
-
-When a static token has no `expiresAt`, the manager treats it as valid until it is replaced or deleted. This means only that the package has no expiration time to act on; it does not guarantee that the credential never expires, is not revoked, or remains accepted by the external service.
-
-When a static token has an `expiresAt`, it remains valid until that exact time and does not use the refresh window. Once expired, retrieval fails with `TokenExpiredError`. Static token records cannot contain a refresh token.
-
-The term **read-only token** is avoided because it commonly describes authorization scope rather than credential lifecycle. A static token may permit read, write, or other operations according to the external service.
-
-## Valid Token
-
-A **valid token**, in manager API names such as `getValidToken`, means a refreshable token that is not within its known refresh window or was successfully refreshed, or a static token that has not reached its known expiration. The package does not make a request to the external service to prove that the token is accepted.
-
-A token without `expiresAt` is therefore treated as valid based on local information alone.
-
-## Legacy Lifecycle
-
-The lifecycle field is optional for compatibility with existing token records and OAuth providers. For OAuth bindings, when `lifecycle` is omitted, `expiresAt` determines whether to refresh and an expiring token without a refresh token cannot be refreshed. Static bindings never refresh, even when a stored legacy record omits `lifecycle`.
-
-## Revocation And Deletion
-
-**Revocation** invalidates a credential with the external service when the registered provider supports remote revocation. **Deletion** removes the connection's token record from the local store.
-
-For OAuth bindings, `TokenManager.revoke` attempts supported remote revocation first and then deletes the local record. For stored static bindings, it deletes the local record. Revocation is unsupported for source-backed bindings because the manager cannot mutate an externally managed credential source.
-
-Deleting a connection does not otherwise guarantee that its credential is invalidated externally.
-
-## Token Store
-
-A **token store** persists token records by token key. Stores support reading, writing, and deleting records. "Static token" describes token lifecycle and does not mean that the underlying store is read-only.
-
-## Credential Source
-
-A **credential source** reads an externally managed, provider-specific raw credential. Sources do not return token records and do not support writes or deletion. A static provider converts a source value into a normalized token record before the manager returns it. Environment variables and external secret configuration are credential sources rather than token stores.
+"Access" remains an informal description, not a distinct domain entity or public type. The credential-first target is described in the authoritative [consumer guide](docs/getting-started.md) and constrained by `PR-002` in [CONSTITUTION.md](CONSTITUTION.md).

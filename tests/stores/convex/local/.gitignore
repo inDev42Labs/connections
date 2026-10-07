@@ -1,0 +1,5 @@
+.convex/
+.env.local
+.local/
+fixture/.convex/
+fixture/.env.local
