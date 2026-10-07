@@ -42,11 +42,12 @@ const payload = Redacted.make(
 type TestFetch = (url: string | URL | Request, init?: RequestInit) => Promise<Response>
 
 async function eventually(check: () => boolean) {
-  for (let i = 0; i < 100; i++) {
-    if (check()) return
-    await new Promise<void>((resolve) => setImmediate(resolve))
-  }
-  throw new Error('Lifecycle did not reach expected checkpoint')
+  await vi.waitFor(
+    () => {
+      if (!check()) throw new Error('Lifecycle did not reach expected checkpoint')
+    },
+    { timeout: 2_000, interval: 5 },
+  )
 }
 
 async function fixture(configuredProvider = provider()) {
@@ -115,6 +116,19 @@ async function fixture(configuredProvider = provider()) {
 }
 
 afterEach(() => vi.unstubAllGlobals())
+
+test('lifecycle checkpoints allow asynchronous work beyond 100 event-loop turns', async () => {
+  let reached = false
+  const completed = eventually(() => reached).then(
+    () => true,
+    () => false,
+  )
+  for (let turn = 0; turn < 120; turn++) {
+    await new Promise<void>((resolve) => setImmediate(resolve))
+  }
+  reached = true
+  expect(await completed).toBe(true)
+})
 
 test('Shopify waits 250ms and 750ms between at most three refresh attempts', async () => {
   const clock = makeTestClock(1_000)

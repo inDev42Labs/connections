@@ -89,6 +89,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -100,6 +107,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -127,6 +135,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -138,6 +153,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -180,6 +196,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -191,6 +214,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -232,6 +256,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -243,6 +274,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -270,6 +302,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -281,6 +320,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -366,6 +406,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -377,6 +424,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -404,6 +452,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -415,6 +470,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -457,6 +513,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -468,6 +531,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -509,6 +573,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -520,6 +591,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -547,6 +619,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -558,6 +637,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -663,6 +743,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -674,6 +761,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -701,6 +789,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -712,6 +807,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -754,6 +850,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -765,6 +868,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -806,6 +910,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -817,6 +928,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -844,6 +956,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -855,6 +974,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -956,6 +1076,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -967,6 +1094,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -994,6 +1122,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1005,6 +1140,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -1047,6 +1183,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -1058,6 +1201,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -1099,6 +1243,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1110,6 +1261,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -1137,6 +1289,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1148,6 +1307,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -1261,6 +1421,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1272,6 +1439,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -1299,6 +1467,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1310,6 +1485,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -1352,6 +1528,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -1363,6 +1546,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -1404,6 +1588,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1415,6 +1606,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -1442,6 +1634,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1453,6 +1652,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -1551,6 +1751,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1562,6 +1769,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -1589,6 +1797,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1600,6 +1815,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -1642,6 +1858,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -1653,6 +1876,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -1694,6 +1918,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1705,6 +1936,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -1732,6 +1964,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1743,6 +1982,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -1830,6 +2070,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       _tag: "KnownFailure";
                       failedAt: number;
                       reason: "ProviderRejected" | "ProviderFailure";
+                      recovery?:
+                        | "NotDispatched"
+                        | {
+                            _tag: "ReplaySafe";
+                            retryAt: number;
+                            retryUntil: number;
+                          };
                     }
                   | {
                       _tag: "InterventionRequired";
@@ -1841,6 +2088,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | "RecoveryLimitExceeded";
                     };
                 recoveryDeadline: number;
+                replayUntil?: number;
                 schemaVersion: 1;
                 startedAt: number;
                 transferCount: number;
@@ -1868,6 +2116,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       _tag: "KnownFailure";
                       failedAt: number;
                       reason: "ProviderRejected" | "ProviderFailure";
+                      recovery?:
+                        | "NotDispatched"
+                        | {
+                            _tag: "ReplaySafe";
+                            retryAt: number;
+                            retryUntil: number;
+                          };
                     }
                   | {
                       _tag: "InterventionRequired";
@@ -1879,6 +2134,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | "RecoveryLimitExceeded";
                     };
                 recoveryDeadline: number;
+                replayUntil?: number;
                 schemaVersion: 1;
                 startedAt: number;
                 transferCount: number;
@@ -1937,6 +2193,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1948,6 +2211,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -1975,6 +2239,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -1986,6 +2257,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2028,6 +2300,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -2039,6 +2318,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -2080,6 +2360,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2091,6 +2378,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2118,6 +2406,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2129,6 +2424,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2222,6 +2518,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2233,6 +2536,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2260,6 +2564,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2271,6 +2582,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2313,6 +2625,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -2324,6 +2643,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -2365,6 +2685,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2376,6 +2703,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2403,6 +2731,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2414,6 +2749,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2512,6 +2848,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2523,6 +2866,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2550,6 +2894,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2561,6 +2912,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2603,6 +2955,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -2614,6 +2973,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -2655,6 +3015,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2666,6 +3033,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2693,6 +3061,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2704,6 +3079,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2797,6 +3173,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2808,6 +3191,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2835,6 +3219,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2846,6 +3237,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2888,6 +3280,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -2899,6 +3298,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -2940,6 +3340,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2951,6 +3358,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -2978,6 +3386,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -2989,6 +3404,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3084,6 +3500,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3095,6 +3518,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3122,6 +3546,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3133,6 +3564,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3175,6 +3607,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -3186,6 +3625,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -3227,6 +3667,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3238,6 +3685,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3265,6 +3713,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3276,6 +3731,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3370,6 +3826,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3381,6 +3844,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3408,6 +3872,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3419,6 +3890,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3461,6 +3933,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -3472,6 +3951,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -3513,6 +3993,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3524,6 +4011,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3551,6 +4039,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3562,6 +4057,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3653,6 +4149,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3664,6 +4167,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3691,6 +4195,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3702,6 +4213,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3744,6 +4256,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -3755,6 +4274,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -3796,6 +4316,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3807,6 +4334,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3834,6 +4362,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3845,6 +4380,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3896,6 +4432,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           operationId: string;
           ownershipFence: string;
           reason: "ProviderRejected" | "ProviderFailure";
+          recovery?:
+            | "NotDispatched"
+            | { _tag: "ReplaySafe"; retryAt: number; retryUntil: number };
           request: { inputDigest: string; requestId: string };
         },
         | { _tag: "ConnectionInitialized"; generation: 0; revision: 0 }
@@ -3932,6 +4471,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3943,6 +4489,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -3970,6 +4517,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -3981,6 +4535,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -4023,6 +4578,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -4034,6 +4596,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -4075,6 +4638,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -4086,6 +4656,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -4113,6 +4684,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -4124,6 +4702,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -4210,6 +4789,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -4221,6 +4807,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -4248,6 +4835,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -4259,6 +4853,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -4301,6 +4896,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     _tag: "KnownFailure";
                     failedAt: number;
                     reason: "ProviderRejected" | "ProviderFailure";
+                    recovery?:
+                      | "NotDispatched"
+                      | {
+                          _tag: "ReplaySafe";
+                          retryAt: number;
+                          retryUntil: number;
+                        };
                   }
                 | {
                     _tag: "InterventionRequired";
@@ -4312,6 +4914,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | "RecoveryLimitExceeded";
                   };
               recoveryDeadline: number;
+              replayUntil?: number;
               schemaVersion: 1;
               startedAt: number;
               transferCount: number;
@@ -4353,6 +4956,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -4364,6 +4974,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
@@ -4391,6 +5002,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         _tag: "KnownFailure";
                         failedAt: number;
                         reason: "ProviderRejected" | "ProviderFailure";
+                        recovery?:
+                          | "NotDispatched"
+                          | {
+                              _tag: "ReplaySafe";
+                              retryAt: number;
+                              retryUntil: number;
+                            };
                       }
                     | {
                         _tag: "InterventionRequired";
@@ -4402,6 +5020,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           | "RecoveryLimitExceeded";
                       };
                   recoveryDeadline: number;
+                  replayUntil?: number;
                   schemaVersion: 1;
                   startedAt: number;
                   transferCount: number;
