@@ -4,19 +4,33 @@ Connections is a TypeScript library that supplies credentials for external provi
 
 Start with [Get credentials for a connection](docs/getting-started.md) for built-in Promise setup and use. Returned secrets stay redacted until you call `revealSecret` at the provider-request boundary. Managers also expose equivalent operations through `manager.effect` for Effect composition. Custom-provider, custom-store, and custom-encryptor extension APIs are deferred; see [supported integrations](docs/reference.md#supported-integrations). The built-in Convex store uses invocation binding.
 
-## Find what you need
+## Project documentation
 
+- [Get credentials for a connection](docs/getting-started.md): built-in setup and common workflows.
 - [Reference](docs/reference.md): methods, providers, stores, failures, and security boundaries.
-- [Use Connections with Effect](docs/effect.md): compose operations, handle failures, and run programs through `manager.effect`.
+- [Use Connections with Effect](docs/effect.md): composition through `manager.effect`.
 - [Convex setup](docs/stores/convex.md) and [PostgreSQL setup](docs/stores/postgresql.md): adapter-specific configuration and execution.
-- [Active technical specifications](specs/README.md): feature requirements, implementation seams, and verification paths.
-- [Constitution](CONSTITUTION.md) and [domain vocabulary](CONTEXT.md): project constraints and shared terms.
+- [Development quickstart](#develop-this-repository): prerequisites, local checks, and evidence limits.
+- [Distribution](#publish-a-release): release triggers, access, verification, and recovery.
+- [Technical specifications](specs/README.md): current requirements, implementation approach, and verification paths.
+- [Glossary](GLOSSARY.md): agreed domain vocabulary.
+- [Decision records](docs/adr/README.md): consequential choices and their rationale.
+- [Constitution](CONSTITUTION.md): durable constraints and amendment rules.
 
-`docs/` is the authoritative human-facing target. `specs/` provides technical clarification, not an alternative target or initiative history. Exact exports, dependencies, and commands are declared in `package.json`.
+`docs/` owns intended consumer behavior. `specs/` provides technical clarification, not an alternative target or initiative history. Exact exports, dependencies, and commands are declared in `package.json`.
+
+## Agent documentation
+
+- [Repository instructions](AGENTS.md): consultation triggers and operating boundaries.
+- [Issue tracker](docs/agents/issue-tracker.md): GitHub operations and authorization boundaries.
+- [Implementation triage](docs/agents/triage-labels.md): implementation-ticket label mapping.
+- [Domain guidance](docs/agents/domain.md): terminology practice and glossary maintenance.
+- [Decision-record guidance](docs/agents/decision-records.md): criteria, format, acceptance, and supersession.
+- [Constitution guidance](docs/agents/constitution.md): applying and maintaining governance.
 
 ## Develop this repository
 
-Use the Bun version declared by `packageManager` in `package.json`. The local checks were exercised with Bun 1.4.0 and Node.js 24.21.0. Node must support `node:sqlite`; process-isolation and process-loss runners require POSIX process behavior.
+Use the Bun version declared by `packageManager` in `package.json` and the Node.js version configured in CI. Node must support `node:sqlite`; process-isolation and process-loss runners require POSIX process behavior.
 
 From the repository root:
 
@@ -34,15 +48,37 @@ No secrets or live integration configuration are required for the default checks
 
 ## Publish a release
 
-Releases use `bumpp` and the [npm publishing workflow](.github/workflows/publish.yml). Ordinary branch pushes do not publish. A `v<version>` tag push verifies the release, packs it, and publishes that archive to npm's `latest` tag using trusted publishing. The workflow rejects prerelease versions, the `0.0.0` placeholder, tags that differ from `package.json`, and commits outside `main`.
+Connections is distributed as `@indev42/connections` on npm. The source workflow is [publish.yml](.github/workflows/publish.yml).
 
-Before the first release, merge the replacement into `inDev42Labs/connections` while retaining upstream history and release tags. Remove upstream's Changesets configuration and release workflow when copying this project's files. In npm's settings for `@indev42/connections`, configure a GitHub Actions trusted publisher with organization `inDev42Labs`, repository `connections`, and workflow filename `publish.yml`. Allow direct `npm publish`; no environment name or npm token is required. See [npm trusted publishing setup](https://docs.npmjs.com/trusted-publishers/). The npm configuration and hosted publishing path must be verified at release time.
+### Access and triggers
 
-From a clean, up-to-date checkout of upstream `main`, run:
+Publishing requires owner authorization and permission to push release commits and tags to `inDev42Labs/connections`. Ordinary branch pushes do not publish; pushes to `main` run CI. A `v<version>` tag push triggers release verification and npm publication. The publishing workflow also accepts a manual run for an existing release tag.
+
+npm must have a GitHub Actions trusted publisher configured for organization `inDev42Labs`, repository `connections`, and workflow filename `publish.yml`, without an environment name. The workflow uses trusted publishing rather than an npm token. Maintainers manage that configuration separately in npm; editing local files does not change it. See [npm trusted publishing setup](https://docs.npmjs.com/trusted-publishers/).
+
+### Release
+
+From a clean, up-to-date checkout of `main` tracking `origin/main`:
 
 ```sh
 bun run verify
-bun run release --release 2.0.0
+bun run release
 ```
 
-The first replacement release is `2.0.0`. For subsequent releases, run `bun run release` and choose the next stable version. After confirmation, the release command updates `package.json`, creates a release commit and version tag, and pushes both. Those pushes trigger publication, so run this command only when you intend to release. Inspect the GitHub Actions run before treating the version as published. Do not delete and recreate a release tag or blindly rerun publishing after an uncertain result. If a workflow failure is confirmed to have left the version unpublished, use the publishing workflow's manual run with `release_tag` set to the existing version tag. The recovery run verifies and packs that tag's code without changing it.
+Choose the next stable version. After confirmation, the release command updates `package.json`, creates a release commit and version tag, and pushes both. Run it only when authorized to release.
+
+The workflow rejects prerelease versions, `0.0.0`, tags that differ from `package.json`, and commits outside `main`. It verifies the release, packs it, and publishes that archive to npm's `latest` tag.
+
+### Verify publication
+
+Inspect both the verification and publishing jobs in GitHub Actions. Confirm that npm exposes the intended package version and that `latest` selects it. A successful local build does not establish publication. Hosted configuration and the publishing path require verification at release time.
+
+### Recover
+
+Do not delete and recreate a release tag or blindly rerun publishing after an uncertain result. Confirm whether npm already contains the version. If the workflow failure left it unpublished, manually run the publishing workflow with `release_tag` set to the existing version tag. The recovery run verifies and packs that tag's code without changing it.
+
+No approved procedure is established here for withdrawing a published release or changing `latest` back to an earlier version. Obtain owner direction before either action.
+
+### Maintain this procedure
+
+Reconcile this section with `package.json` and the publishing workflow whenever release behavior changes. The owner approves changes to the release procedure. Documented commands do not grant permission to push, publish, or change remote configuration.

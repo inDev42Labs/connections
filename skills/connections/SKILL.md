@@ -11,7 +11,7 @@ metadata:
   library_version: '0.0.0'
 sources:
   - 'inDev42Labs/connections:README.md'
-  - 'inDev42Labs/connections:CONTEXT.md'
+  - 'inDev42Labs/connections:GLOSSARY.md'
   - 'inDev42Labs/connections:docs/getting-started.md'
   - 'inDev42Labs/connections:docs/effect.md'
   - 'inDev42Labs/connections:docs/reference.md'
