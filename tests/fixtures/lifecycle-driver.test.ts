@@ -1,9 +1,27 @@
 import { Cause, Effect, Exit, Fiber, Layer } from 'effect'
 import { describe, expect, test } from 'vitest'
-import { makeControlledCheckpoint, makeLifecycleDriver, makeTestClock } from './lifecycle-driver.js'
+import {
+  makeControlledCheckpoint,
+  makeLifecycleDriver,
+  makeTestClock,
+  waitForLifecycle,
+} from './lifecycle-driver.js'
 import { assertSecretCanariesAbsent, makeSecretCanary } from './secret-assertions.js'
 
 describe('lifecycle test fixtures', () => {
+  test('waits for asynchronous checkpoints beyond 100 event-loop turns', async () => {
+    let reached = false
+    const completed = waitForLifecycle(() => reached).then(
+      () => true,
+      () => false,
+    )
+    for (let turn = 0; turn < 120; turn++) {
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+    reached = true
+    expect(await completed).toBe(true)
+  })
+
   test('advances fake time and wakes sleeping effects deterministically', async () => {
     const clock = makeTestClock(1_000)
     let woke = false

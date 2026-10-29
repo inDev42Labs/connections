@@ -6,7 +6,11 @@ import { AesGcm } from '../../src/encryptors/aes-gcm/index.js'
 import { Salesforce } from '../../src/providers/salesforce/index.js'
 import { Configuration } from '../../src/configuration/index.js'
 import { makeInMemoryStore } from '../fixtures/in-memory-store.js'
-import { makeLifecycleDriver, makeTestClock } from '../fixtures/lifecycle-driver.js'
+import {
+  makeLifecycleDriver,
+  makeTestClock,
+  waitForLifecycle as eventually,
+} from '../fixtures/lifecycle-driver.js'
 import { makeDeterministicClientCredentialsProvider } from '../fixtures/client-credentials-provider.js'
 import {
   startSalesforceServer,
@@ -82,14 +86,6 @@ async function makeFixture(refresh: readonly ScriptedTokenOutcome[]) {
 
 function failure(effect: Effect.Effect<unknown, CredentialFailure>) {
   return Effect.flip(effect)
-}
-
-async function eventually(check: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (check()) return
-    await new Promise<void>((resolve) => setImmediate(resolve))
-  }
-  throw new Error('Timed out waiting for deterministic lifecycle progress')
 }
 
 afterEach(async () => {
