@@ -107,7 +107,7 @@ afterEach(async () => {
 })
 
 describe('Salesforce browser authorization', () => {
-  test('rejects insecure non-loopback OAuth endpoints before persisting an attempt', async () => {
+  test('rejects insecure non-loopback OAuth endpoints without authorizing a connection', async () => {
     const store = makeInMemoryStore()
     const manager = Connections.create({
       provider: Salesforce.oauth({
@@ -127,7 +127,13 @@ describe('Salesforce browser authorization', () => {
         )
       ).reason,
     ).toBe('ProviderFailure')
-    expect(store.diagnostics.executions).toBe(0)
+    await expect(manager.inspect('conn_acme')).resolves.toEqual({
+      savedAuthorization: false,
+      credentialWork: 'idle',
+    })
+    await expect(manager.credentials('conn_acme')).rejects.toMatchObject({
+      _tag: 'AuthorizationRequired',
+    })
   })
 
   test('binds random state, S256 PKCE, stored target, and stored intent to completion', async () => {
