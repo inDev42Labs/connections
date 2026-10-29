@@ -9,7 +9,7 @@ Use the agreed terms in proposals, issues, documentation, and code. Configuratio
 - Challenge usage that conflicts with a glossary definition. Name the conflicting meanings and ask which is intended.
 - Sharpen vague or overloaded language by proposing a precise canonical term rather than silently choosing a meaning.
 - Test domain relationships with concrete scenarios that expose their boundaries.
-- Compare claims with consumer docs, code, tests, and specifications. Surface contradictions rather than silently changing the contract.
+- Compare claims with consumer docs, code, tests, and accepted decision records. Surface contradictions rather than silently changing the contract.
 - Record a resolved definition in the glossary immediately. A proposed term remains a proposal until agreed.
 
 ## Definition format

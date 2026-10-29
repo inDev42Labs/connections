@@ -12,12 +12,11 @@ Start with [Get credentials for a connection](docs/getting-started.md) for built
 - [Convex setup](docs/stores/convex.md) and [PostgreSQL setup](docs/stores/postgresql.md): adapter-specific configuration and execution.
 - [Development quickstart](#develop-this-repository): prerequisites, local checks, and evidence limits.
 - [Distribution](#publish-a-release): release triggers, access, verification, and recovery.
-- [Technical specifications](specs/README.md): current requirements, implementation approach, and verification paths.
 - [Glossary](GLOSSARY.md): agreed domain vocabulary.
 - [Decision records](docs/adr/README.md): consequential choices and their rationale.
 - [Constitution](CONSTITUTION.md): durable constraints and amendment rules.
 
-`docs/` owns intended consumer behavior. `specs/` provides technical clarification, not an alternative target or initiative history. Exact exports, dependencies, and commands are declared in `package.json`.
+`docs/` owns intended consumer behavior. Code, schemas, and configuration own exact declarations; tests provide executable guarantees. Issues track remaining work, and decision records explain consequential choices. Exact exports, dependencies, and commands are declared in `package.json`.
 
 ## Agent documentation
 

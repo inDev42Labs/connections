@@ -12,7 +12,7 @@ When proposing a rule, state the constraint and its observable compliance signal
 
 ## Reconcile and verify
 
-Reconcile directly affected consumer docs, specifications, plans, agent instructions, and checks. Verify changed paths, links, commands, and claims against their owners.
+Reconcile directly affected consumer docs, issues, decision records, agent instructions, and checks. Verify changed paths, links, commands, and claims against their owners.
 
 Report governance changes, unresolved decisions, and verification limits. Establishing governance does not authorize further development.
 
