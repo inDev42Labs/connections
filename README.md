@@ -11,6 +11,7 @@ Start with [Get credentials for a connection](docs/getting-started.md) for built
 - [Use Connections with Effect](docs/effect.md): composition through `manager.effect`.
 - [Convex setup](docs/stores/convex.md) and [PostgreSQL setup](docs/stores/postgresql.md): adapter-specific configuration and execution.
 - [Development quickstart](#develop-this-repository): prerequisites, local checks, and evidence limits.
+- [Testing guidance](docs/testing.md): approved seams, behavioral assertions, and coverage-preserving test changes.
 - [Distribution](#publish-a-release): release triggers, access, verification, and recovery.
 - [Glossary](GLOSSARY.md): agreed domain vocabulary.
 - [Decision records](docs/adr/README.md): consequential choices and their rationale.
@@ -28,6 +29,8 @@ Start with [Get credentials for a connection](docs/getting-started.md) for built
 - [Constitution guidance](docs/agents/constitution.md): applying and maintaining governance.
 
 ## Develop this repository
+
+Before adding or changing tests, read the [testing guidance](docs/testing.md).
 
 Use the Bun version declared by `packageManager` in `package.json` and the Node.js version configured in CI. Node must support `node:sqlite`; process-isolation and process-loss runners require POSIX process behavior.
 
