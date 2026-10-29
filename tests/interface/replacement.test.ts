@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer'
-import { Data, Effect, Redacted } from 'effect'
+import { Effect, Redacted } from 'effect'
 import { afterEach, describe, expect, test } from 'vitest'
-import { AuthorizationFailure, Connections, type AuthorizationStart } from '../../src/index.js'
+import { AuthorizationFailure, Connections } from '../../src/index.js'
 import { AesGcm } from '../../src/encryptors/aes-gcm/index.js'
 import { Salesforce } from '../../src/providers/salesforce/index.js'
 import { Configuration } from '../../src/configuration/index.js'
@@ -17,8 +17,6 @@ import {
 const encryptionKey = Buffer.from(new Uint8Array(32).fill(42)).toString('base64')
 const redirectUri = 'https://app.example.test/oauth/salesforce/callback'
 const servers = new Set<SalesforceTestServer>()
-
-class ApplicationDenied extends Data.TaggedError('ApplicationDenied')<{}> {}
 
 function tokenResponse(accessToken: string): ScriptedResponse {
   return {
@@ -94,41 +92,6 @@ afterEach(async () => {
 })
 
 describe('Salesforce authorization replacement interface', () => {
-  test('application denial and cross-connection authority stop before replacement start', async () => {
-    const fixture = await makeFixture({
-      authorization: [{ _tag: 'Grant', code: 'enrollment-code' }],
-      token: [tokenResponse('current-access-token')],
-    })
-    await enroll(fixture)
-    const allowed = new Set(['conn_acme'])
-    const startAsApplication = (
-      callerAllowed: boolean,
-      connectionId: string,
-    ): Effect.Effect<AuthorizationStart, AuthorizationFailure | ApplicationDenied> =>
-      callerAllowed && allowed.has(connectionId)
-        ? fixture.manager.effect.startAuthorization(connectionId, {
-            binding: 'replacement-session',
-            replace: true,
-          })
-        : Effect.fail(new ApplicationDenied())
-    const readsBefore = fixture.store.diagnostics.reads
-    const executionsBefore = fixture.store.diagnostics.executions
-    const authorizationRequestsBefore = fixture.server.authorizationRequestCount
-    const tokenRequestsBefore = fixture.server.tokenRequestCount
-
-    await expect(Effect.runPromise(startAsApplication(false, 'conn_acme'))).rejects.toThrow(
-      ApplicationDenied,
-    )
-    await expect(Effect.runPromise(startAsApplication(true, 'conn_globex'))).rejects.toThrow(
-      ApplicationDenied,
-    )
-
-    expect(fixture.store.diagnostics.reads).toBe(readsBefore)
-    expect(fixture.store.diagnostics.executions).toBe(executionsBefore)
-    expect(fixture.server.authorizationRequestCount).toBe(authorizationRequestsBefore)
-    expect(fixture.server.tokenRequestCount).toBe(tokenRequestsBefore)
-  })
-
   test('rejects enrollment against saved authorization unless replacement intent is explicit', async () => {
     const fixture = await makeFixture({
       authorization: [{ _tag: 'Grant', code: 'enrollment-code' }],

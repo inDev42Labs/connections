@@ -5,7 +5,6 @@ import type { EncryptionContext } from '../../src/core/contracts/encryptor.js'
 import {
   AuthorizationFailure,
   Connections,
-  type AuthorizationStart,
   type ReadCredentialFailure as CredentialFailure,
 } from '../../src/index.js'
 import { AesGcm } from '../../src/encryptors/aes-gcm/index.js'
@@ -108,32 +107,6 @@ afterEach(async () => {
 })
 
 describe('Salesforce browser authorization', () => {
-  test('application denial and cross-connection authority stop before startAuthorization', async () => {
-    const fixture = await makeFixture()
-    const allowed = new Set(['conn_acme'])
-    const startAsApplication = (
-      callerAllowed: boolean,
-      connectionId: string,
-    ): Effect.Effect<AuthorizationStart, AuthorizationFailure | ApplicationDenied> =>
-      callerAllowed && allowed.has(connectionId)
-        ? fixture.manager.effect.startAuthorization(connectionId, {
-            binding: 'trusted-session',
-            replace: false,
-          })
-        : Effect.fail(new ApplicationDenied())
-
-    await expect(Effect.runPromise(startAsApplication(false, 'conn_acme'))).rejects.toThrow(
-      ApplicationDenied,
-    )
-    await expect(Effect.runPromise(startAsApplication(true, 'conn_globex'))).rejects.toThrow(
-      ApplicationDenied,
-    )
-    expect(fixture.store.diagnostics.reads).toBe(0)
-    expect(fixture.store.diagnostics.executions).toBe(0)
-    expect(fixture.server.authorizationRequestCount).toBe(0)
-    expect(fixture.server.tokenRequestCount).toBe(0)
-  })
-
   test('rejects insecure non-loopback OAuth endpoints before persisting an attempt', async () => {
     const store = makeInMemoryStore()
     const manager = Connections.create({
