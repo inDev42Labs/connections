@@ -8,11 +8,7 @@ import type {
   ProviderRefreshOutcome,
   RefreshCredentialInput,
 } from '../../core/contracts/provider.js'
-import {
-  MalformedJsonResponse,
-  readBoundedJsonResponse,
-  readOAuthErrorCode,
-} from '../internal/http.js'
+import { MalformedJsonResponse, postCredentialRequest, oauthErrorCode } from '../internal/http.js'
 import {
   parseAuthorizationCodeResponse,
   parseRefreshResponse,
@@ -41,7 +37,6 @@ export interface SalesforceOAuthConfiguration<Requirements = never> {
 
 const authorizationPath = '/services/oauth2/authorize'
 const tokenPath = '/services/oauth2/token'
-const timeoutMilliseconds = 30_000
 const callbackParameters = new Set(['code', 'state', 'error', 'error_description', 'error_uri'])
 
 type TokenResponse =
@@ -238,48 +233,29 @@ function tokenPost(
   body: URLSearchParams,
   refresh = false,
 ): Effect.Effect<TokenResponse, SalesforceTransportFailure> {
-  return Effect.tryPromise({
-    try: async (effectSignal) => {
-      const controller = new AbortController()
-      const abort = () => controller.abort()
-      effectSignal.addEventListener('abort', abort, { once: true })
-      const timeout = setTimeout(abort, timeoutMilliseconds)
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'content-type': 'application/x-www-form-urlencoded' },
-          body,
-          redirect: 'error',
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          if (refresh) {
-            // OAuth 2.0 section 5.2 distinguishes invalid_grant from client
-            // authentication errors. HTTP status alone does not prove revocation.
-            // https://www.rfc-editor.org/rfc/rfc6749#section-5.2
-            if (response.status === 400 || response.status === 401) {
-              const error = await readOAuthErrorCode(response)
-              return error === 'invalid_grant'
-                ? { _tag: 'ProviderRejected' as const }
-                : { _tag: 'ProviderFailure' as const }
-            }
-            void response.body?.cancel().catch(() => undefined)
-            return { _tag: 'ProviderFailure' as const }
-          }
-          void response.body?.cancel().catch(() => undefined)
-          return { _tag: 'ProviderRejected' as const }
-        }
-        return { _tag: 'Success' as const, body: await readBoundedJsonResponse(response) }
-      } finally {
-        clearTimeout(timeout)
-        effectSignal.removeEventListener('abort', abort)
-      }
-    },
-    catch: (error) =>
-      new SalesforceTransportFailure({
-        reason: error instanceof MalformedJsonResponse ? 'MalformedResponse' : 'TransportFailure',
-      }),
-  })
+  return postCredentialRequest({
+    url,
+    body,
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    errorBodyStatuses: refresh ? [400, 401] : [],
+  }).pipe(
+    Effect.map((response): TokenResponse => {
+      if (response._tag === 'Success') return response
+      if (!refresh) return { _tag: 'ProviderRejected' }
+      // OAuth 2.0 section 5.2 distinguishes invalid_grant from client
+      // authentication errors. HTTP status alone does not prove revocation.
+      // https://www.rfc-editor.org/rfc/rfc6749#section-5.2
+      return oauthErrorCode(response.body) === 'invalid_grant'
+        ? { _tag: 'ProviderRejected' }
+        : { _tag: 'ProviderFailure' }
+    }),
+    Effect.mapError(
+      (error) =>
+        new SalesforceTransportFailure({
+          reason: error instanceof MalformedJsonResponse ? 'MalformedResponse' : 'TransportFailure',
+        }),
+    ),
+  )
 }
 
 function refreshCredentials<Requirements>(
