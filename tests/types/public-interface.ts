@@ -17,6 +17,7 @@ import {
 } from '../../src/index.js'
 import { AesGcm, type EncryptionFailure } from '../../src/encryptors/aes-gcm/index.js'
 import { ApiKey, type ApiKeyCredentials } from '../../src/providers/api-key/index.js'
+import { Amazon, type AmazonCredentials } from '../../src/providers/amazon/index.js'
 import { Salesforce, type SalesforceCredentials } from '../../src/providers/salesforce/index.js'
 import { Shopify, type ShopifyCredentials } from '../../src/providers/shopify/index.js'
 import { Zoho, type ZohoCredentials } from '../../src/providers/zoho/index.js'
@@ -98,6 +99,65 @@ manager.completeAuthorization({ callbackUrl: 'url', binding: 'binding' })
 Connections.create({ store: memoryStore, provider, namespace: 'old' })
 // @ts-expect-error A store must implement transactional commands, not get/set.
 Connections.create({ provider, store: { get: async () => null } })
+
+const amazon = Connections.create({
+  store: memoryStore,
+  provider: Amazon.oauth({
+    clientId: Configuration.string(() => 'client-id'),
+    clientSecret: Configuration.secret('AMAZON_CLIENT_SECRET'),
+    redirectUri: () => 'https://example.test/amazon/callback',
+    scopes: ['advertising::campaign_management', 'profile'],
+    region: 'eu',
+  }),
+})
+amazon.startAuthorization('id', { binding: 'trusted-session' })
+amazon.completeAuthorization({
+  callbackUrl: 'url',
+  binding: 'trusted-session',
+  authorize: () => undefined,
+})
+expectTypeOf<Awaited<ReturnType<typeof amazon.credentials>>>().toEqualTypeOf<AmazonCredentials>()
+expectTypeOf<
+  Effect.Success<ReturnType<typeof amazon.effect.credentials>>
+>().toEqualTypeOf<AmazonCredentials>()
+declare const amazonCredentials: AmazonCredentials
+expectTypeOf(revealSecret(amazonCredentials.accessToken)).toEqualTypeOf<string>()
+// @ts-expect-error Amazon use credentials do not contain the retained refresh token.
+void amazonCredentials.refreshToken
+// @ts-expect-error Application secrets are not use credentials.
+void amazonCredentials.clientSecret
+// @ts-expect-error Access tokens remain redacted until revealed.
+const amazonRawToken: string = amazonCredentials.accessToken
+void amazonRawToken
+// @ts-expect-error Browser OAuth has no manual source credential enrollment.
+amazon.setClientCredentials('id', { refreshToken: 'token' })
+// @ts-expect-error Browser OAuth does not support API-key enrollment.
+amazon.setApiKey('id', 'key')
+Amazon.oauth({
+  clientId: 'id',
+  clientSecret: 'secret',
+  redirectUri: 'https://example.test/callback',
+  // @ts-expect-error Scopes must be a non-empty tuple.
+  scopes: [],
+})
+Amazon.oauth({
+  clientId: 'id',
+  clientSecret: 'secret',
+  redirectUri: 'https://example.test/callback',
+  scopes: ['profile'],
+  // @ts-expect-error Only documented Amazon regions are accepted.
+  region: 'other',
+})
+// @ts-expect-error Server-side OAuth requires an application secret.
+Amazon.oauth({ clientId: 'id', redirectUri: 'https://example.test/callback', scopes: ['profile'] })
+const amazonWithService = Amazon.oauth({
+  clientId: Effect.map(ProviderConfiguration, (c) => c.clientId),
+  clientSecret: 'secret',
+  redirectUri: 'https://example.test/callback',
+  scopes: ['profile'],
+})
+// @ts-expect-error Arbitrary Effect-service requirements are unsupported.
+Connections.create({ store: memoryStore, provider: amazonWithService })
 
 const apiKey = Connections.create({ store: memoryStore, provider: ApiKey.opaque({ id: 'retell' }) })
 apiKey.setApiKey('id', 'key', { replace: true })
