@@ -12,7 +12,7 @@ Offer a record only when all three conditions hold:
 
 Qualifying choices can include architectural boundaries, infrastructure lock-in, deliberate departures from an expected design, constraints invisible in code, and non-obvious rejection of alternatives.
 
-Do not create a record for routine implementation choices or to populate the index. Specifications own current technical intent; records explain consequential choices and why they were made.
+Do not create a record for routine implementation choices or to populate the index. Consumer docs own intended behavior; code, schemas, and configuration own exact declarations. Records explain consequential choices and why they were made.
 
 ## Location and format
 
@@ -36,7 +36,7 @@ The project owner accepts a decision. Set `Status: accepted` only after approval
 
 To revisit an accepted decision, propose a new record. Once approved, mark the earlier record `Status: superseded by <record link>` and link back from the new record. Use `Status: deprecated` when the owner retires a decision without a replacement. Preserve the original rationale.
 
-Reconcile affected consumer guidance, specifications, procedures, and checks. A record does not override the constitution or authorize a public behavior change.
+Reconcile affected consumer guidance, issues, procedures, and checks. A record does not override the constitution or authorize a public behavior change.
 
 ## Maintenance
 

@@ -1,6 +1,6 @@
 # Connections constitution
 
-These rules constrain the current target and future changes. [Consumer docs](docs/reference.md) own intended behavior and extension boundaries. [Technical specifications](specs/README.md) explain that target without overriding it.
+These rules constrain the current target and future changes. [Consumer docs](docs/reference.md) own intended behavior and extension boundaries.
 
 ## PR-001: Ship a library, not a platform
 
@@ -42,6 +42,6 @@ Verify accepted usage and rejected misuse through public-interface type tests an
 
 ## Maintain the rules and their owners
 
-The project owner approves amendments and exceptions. Higher-precedence platform and user instructions still govern repository work. Reconcile a changed rule with affected docs, specs, agent instructions, and tests; do not hide an exception in a plan.
+The project owner approves amendments and exceptions. Higher-precedence platform and user instructions still govern repository work. Reconcile a changed rule with affected docs, issues, decision records, agent instructions, and tests; do not hide an exception in an implementation plan.
 
-Keep governance here, consumer intent in `docs/`, technical clarification in living feature specs, approach in plans, and actionable remaining work in tasks. Exact declarations belong to code, schemas, and configuration. Git preserves superseded targets and completed initiatives. If a technical artifact conflicts with the consumer target or a rule, stop the affected work and resolve the conflict with the owner.
+Keep governance here, consumer intent in `docs/`, implementation plans and actionable remaining work in issues, and consequential rationale in decision records. Exact declarations belong to code, schemas, and configuration; executable guarantees belong to tests. Git preserves superseded targets and completed initiatives. If an artifact conflicts with the consumer target or a rule, stop the affected work and resolve the conflict with the owner.
