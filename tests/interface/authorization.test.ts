@@ -562,14 +562,12 @@ describe('Salesforce browser authorization', () => {
         authorize: () => Effect.runPromise(Effect.void.pipe(Effect.asVoid)),
       }),
     )
-    const snapshot = fixture.store.unsafeReadConnection({
-      namespace: 'default',
-      providerId: 'salesforce',
-      connectionId: 'conn_acme',
-    })
-
     expect(failure.reason).toBe('StorageFailure')
-    expect(snapshot?.authorization).toEqual({ _tag: 'NotAuthorized' })
+    await expect(
+      Effect.runPromise(fixture.manager.effect.inspect('conn_acme')),
+    ).resolves.toMatchObject({
+      savedAuthorization: false,
+    })
     expect((await credentialFailure(fixture.manager.effect.credentialUse('conn_acme')))._tag).toBe(
       'AuthorizationRequired',
     )

@@ -111,12 +111,12 @@ describe('Zoho Self Client public connection workflow', () => {
       credentialWork: 'idle',
     })
 
-    const deniedEnrolls = store.diagnostics.commands.AdmitSelfClientExchange ?? 0
     const wrongIntent = await authorizationFailure(
       connection.enrollCode('conn_zoho', enrollment('should-not-be-used', 'enroll')),
     )
     expect(wrongIntent).toMatchObject({ reason: 'Conflict' })
-    expect(store.diagnostics.commands.AdmitSelfClientExchange).toBe(deniedEnrolls)
+    const unchanged = await Effect.runPromise(connection.credentials('conn_zoho'))
+    expect(Redacted.value(unchanged.accessToken)).toBe(`${accessCanary}-first`)
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     const admissionHold = store.holdNext('AdmitSelfClientExchange', 'after')
@@ -164,8 +164,7 @@ describe('Zoho Self Client public connection workflow', () => {
   test('requires application approval before admission or code dispatch and rejects wrong intent', async () => {
     const fetchMock = vi.fn<TestFetch>(() => Promise.resolve(tokenResponse('should-not-exist')))
     vi.stubGlobal('fetch', fetchMock)
-    const { connection, store } = fixture()
-    const executionsBefore = store.diagnostics.executions
+    const { connection } = fixture()
 
     await expect(
       Effect.runPromise(
@@ -175,7 +174,10 @@ describe('Zoho Self Client public connection workflow', () => {
         ),
       ),
     ).rejects.toThrow(ApplicationDenied)
-    expect(store.diagnostics.executions).toBe(executionsBefore)
+    expect(await Effect.runPromise(connection.inspect('conn_zoho'))).toEqual({
+      savedAuthorization: false,
+      credentialWork: 'idle',
+    })
     expect(fetchMock).not.toHaveBeenCalled()
 
     let wrongIntentAuthorization = 0
@@ -188,7 +190,10 @@ describe('Zoho Self Client public connection workflow', () => {
     )
     expect(wrongIntent).toMatchObject({ reason: 'Conflict' })
     expect(wrongIntentAuthorization).toBe(1)
-    expect(store.diagnostics.executions).toBe(executionsBefore)
+    expect(await Effect.runPromise(connection.inspect('conn_zoho'))).toEqual({
+      savedAuthorization: false,
+      credentialWork: 'idle',
+    })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -200,13 +205,12 @@ describe('Zoho Self Client public connection workflow', () => {
 
     await Effect.runPromise(connection.enrollCode('conn_zoho', enrollment('one-time-code')))
 
-    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(
       Redacted.value(
         (await Effect.runPromise(connection.credentialUse('conn_zoho'))).credentials.accessToken,
       ),
     ).toBe('saved-access')
-    expect(store.diagnostics.commands.CompleteSelfClientExchange).toBeGreaterThanOrEqual(1)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   test('keeps intervention evidence when a successful exchange cannot be protected', async () => {
