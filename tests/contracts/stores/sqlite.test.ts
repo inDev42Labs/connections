@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Effect, Redacted } from 'effect'
 import { expect, onTestFinished, test } from 'vitest'
-import type { EncryptionContext } from '../../../src/core/contracts/encryptor.js'
 import { AesGcm, EncryptionFailure } from '../../../src/encryptors/aes-gcm/index.js'
 import {
   connectionStorageKey,
@@ -378,55 +377,38 @@ test('SQLite store: malformed persisted records fail closed with safe failures',
   ).resolves.toEqual({ _tag: 'StoreConflict', reason: 'ConditionChanged' })
 })
 
-test('SQLite store: delegates protection lazily to the caller encryptor', async () => {
+test('SQLite store: uses the selected AES-GCM encryptor lazily without an open database', async () => {
   const { database } = temporaryDatabase()
-  const calls: Array<{
-    readonly operation: 'encrypt' | 'decrypt'
-    readonly context: EncryptionContext
-  }> = []
-  let protectedPlaintext: string | undefined
-  let unprotectedEnvelope: unknown
-  const envelope = {
-    version: 1,
-    algorithm: 'AES-256-GCM',
-    keyId: 'delegated',
-    iv: 'iv',
-    ciphertext: 'ciphertext',
-  } as const
-  const delegatedEncryptor = {
-    encrypt: (plaintext: Redacted.Redacted<string>, context: EncryptionContext) =>
-      Effect.sync(() => {
-        protectedPlaintext = Redacted.value(plaintext)
-        calls.push({ operation: 'encrypt', context })
-        return envelope
-      }),
-    decrypt: (storedEnvelope: unknown, context: EncryptionContext) =>
-      Effect.sync(() => {
-        unprotectedEnvelope = storedEnvelope
-        calls.push({ operation: 'decrypt', context })
-        return Redacted.make('decrypted')
-      }),
-  }
-  const store = SQLite.store({ database, encryptor: delegatedEncryptor })
+  let keyReads = 0
+  const encryptor = AesGcm.encryptor({
+    key: Effect.sync(() => {
+      keyReads++
+      return Redacted.make('KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio=')
+    }),
+    keyId: 'caller-selected',
+  })
+  const store = SQLite.store({ database, encryptor })
   const context = {
-    namespace: 'delegation',
+    namespace: 'sqlite-encryption',
     providerId: 'salesforce',
     connectionId: 'connection',
     generation: 0,
     purpose: 'credentials' as const,
   }
   const protectedEffect = store.protect(Redacted.make('plaintext'), context)
-  const unprotectedEffect = store.unprotect(envelope, context)
-
-  expect(calls).toEqual([])
-  await expect(Effect.runPromise(protectedEffect)).resolves.toEqual(envelope)
-  await expect(Effect.runPromise(unprotectedEffect)).resolves.toSatisfy(
-    (value) => Redacted.value(value) === 'decrypted',
+  expect(keyReads).toBe(0)
+  database.close()
+  const envelope = await Effect.runPromise(protectedEffect)
+  expect(envelope.keyId).toBe('caller-selected')
+  expect(JSON.stringify(envelope)).not.toContain('plaintext')
+  const plaintext = await Effect.runPromise(encryptor.decrypt(envelope, context))
+  expect(Redacted.value(plaintext)).toBe('plaintext')
+  const independentlyProtected = await Effect.runPromise(
+    encryptor.encrypt(Redacted.make('independent'), context),
   )
-  expect(protectedPlaintext).toBe('plaintext')
-  expect(unprotectedEnvelope).toBe(envelope)
-  expect(calls).toEqual([
-    { operation: 'encrypt', context },
-    { operation: 'decrypt', context },
-  ])
+  keyReads = 0
+  const unprotectedEffect = store.unprotect(independentlyProtected, context)
+  expect(keyReads).toBe(0)
+  const unprotected = await Effect.runPromise(unprotectedEffect)
+  expect(Redacted.value(unprotected)).toBe('independent')
 })
