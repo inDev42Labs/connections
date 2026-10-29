@@ -1,11 +1,11 @@
 import { inspect } from 'node:util'
-import { Effect, Redacted } from 'effect'
+import { Effect } from 'effect'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { Connections, CredentialConfigurationFailure, revealSecret } from '../../src/index.js'
 import { ApiKey } from '../../src/providers/api-key/index.js'
 import { Memory } from '../../src/stores/memory/index.js'
 import { Convex, type ConvexInvocationContext } from '../../src/stores/convex/index.js'
-import { makeInMemoryStore } from '../fixtures/in-memory-store.js'
+import { makeInMemoryStore, replaceSavedCredentialPayload } from '../fixtures/in-memory-store.js'
 
 const encryptionKey = 'KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio='
 const promiseContext = {
@@ -17,21 +17,6 @@ function fixture() {
   const store = makeInMemoryStore()
   const manager = Connections.create({ provider: ApiKey.opaque({ id: 'retell' }), store })
   return { manager, store }
-}
-
-// Corruption is arranged at persistence; retrieval still uses the real provider and manager.
-async function replaceSavedPayload(store: ReturnType<typeof fixture>['store'], payload: string) {
-  const key = { namespace: 'default', providerId: 'retell', connectionId: 'conn_acme' }
-  const saved = store.unsafeReadConnection(key)
-  if (saved === null) throw new Error('Expected saved API key')
-  const envelope = await Effect.runPromise(
-    store.protect(Redacted.make(payload), {
-      ...key,
-      generation: saved.generation,
-      purpose: 'credentials',
-    }),
-  )
-  store.unsafeReplaceCredentialEnvelope(key, envelope)
 }
 
 afterEach(() => vi.unstubAllGlobals())
@@ -206,7 +191,11 @@ describe('API-key connection lifecycle', () => {
   ])('fails safely when decrypted credentials contain %s', async (_name, payload) => {
     const { manager, store } = fixture()
     await manager.setApiKey('conn_acme', 'stored-key')
-    await replaceSavedPayload(store, payload)
+    await replaceSavedCredentialPayload(
+      store,
+      { namespace: 'default', providerId: 'retell', connectionId: 'conn_acme' },
+      payload,
+    )
 
     const failure = await manager.credentials('conn_acme').catch((error: unknown) => error)
     expect(failure).toMatchObject({

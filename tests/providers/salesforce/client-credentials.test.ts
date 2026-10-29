@@ -1,9 +1,12 @@
+import { inspect } from 'node:util'
 import { Effect, Redacted } from 'effect'
 import { describe, expect, test, vi } from 'vitest'
 import { Connections, revealSecret } from '../../../src/index.js'
 import { Salesforce } from '../../../src/providers/salesforce/index.js'
 import { Memory } from '../../../src/stores/memory/index.js'
 import { startSalesforceServer } from '../../fixtures/salesforce-server.js'
+import { makeLifecycleDriver, makeTestClock } from '../../fixtures/lifecycle-driver.js'
+import { makeInMemoryStore, replaceSavedCredentialPayload } from '../../fixtures/in-memory-store.js'
 
 const loginUrl = 'https://example.my.salesforce.com'
 const source = { clientId: 'client&id', clientSecret: 'secret+&=' }
@@ -13,21 +16,21 @@ const token = {
   token_type: 'Bearer',
   issued_at: '1000',
 }
-const json = (body: unknown) =>
-  new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })
+const json = (body: unknown) => Response.json(body)
 const store = () => Memory.store({ encryptionKey: 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=' })
+type TestFetch = (...args: Parameters<typeof globalThis.fetch>) => Promise<Response>
 
-async function acquire(response: Response | Error) {
-  const fetch = vi.fn<NonNullable<Parameters<typeof Salesforce.clientCredentials>[0]['fetch']>>(
-    async () => {
-      if (response instanceof Error) throw response
-      return response
-    },
-  )
-  const provider = Salesforce.clientCredentials({ loginUrl, fetch })
-  const prepared = await Effect.runPromise(provider.prepareClientCredentials(source))
-  const outcome = await Effect.runPromise(provider.acquireCredentials({ ...prepared, now: 1000 }))
-  return { provider, outcome, fetch }
+async function enrolled(response: Response | Error) {
+  const fetch = vi.fn<TestFetch>(async () => {
+    if (response instanceof Error) throw response
+    return response
+  })
+  const manager = Connections.create({
+    provider: Salesforce.clientCredentials({ loginUrl, fetch }),
+    store: store(),
+  })
+  await manager.setClientCredentials('connection', source)
+  return { manager, fetch }
 }
 
 describe('Salesforce client credentials', () => {
@@ -55,9 +58,10 @@ describe('Salesforce client credentials', () => {
       await server.close()
     }
   })
+
   test('saves lazily, acquires a form-encoded token, and reacquires after confirmed rejection', async () => {
     const fetch = vi
-      .fn<typeof globalThis.fetch>()
+      .fn<TestFetch>()
       .mockResolvedValueOnce(json(token))
       .mockResolvedValueOnce(json({ ...token, access_token: 'access-2' }))
     const manager = Connections.create({
@@ -72,107 +76,182 @@ describe('Salesforce client credentials', () => {
     expect(Object.keys(use.credentials).sort()).toEqual(['accessToken', 'instanceUrl'])
     const [url, request] = fetch.mock.calls[0]!
     expect(String(url)).toBe(`${loginUrl}/services/oauth2/token`)
-    expect(request).toMatchObject({
-      method: 'POST',
-      redirect: 'error',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    })
-    expect(request?.signal).toBeInstanceOf(AbortSignal)
-    expect(String(request?.body)).toBe(
-      'grant_type=client_credentials&client_id=client%26id&client_secret=secret%2B%26%3D',
+    expect(request).toMatchObject({ method: 'POST', redirect: 'error' })
+    expect(new Headers(request?.headers).get('content-type')).toBe(
+      'application/x-www-form-urlencoded',
     )
+    expect(Object.fromEntries(new URLSearchParams(String(request?.body)))).toEqual({
+      grant_type: 'client_credentials',
+      client_id: source.clientId,
+      client_secret: source.clientSecret,
+    })
     expect(revealSecret((await manager.credentials('connection')).accessToken)).toBe('access-1')
-    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledOnce()
     await use.reportRejected()
     const renewed = await Effect.runPromise(manager.effect.credentials('connection'))
     expect(revealSecret(renewed.accessToken)).toBe('access-2')
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
-  test('retains source credentials and honors reported expiry without requiring a refresh token', async () => {
-    const { provider, outcome } = await acquire(json({ ...token, expires_in: '60' }))
-    expect(outcome._tag).toBe('Acquired')
-    if (outcome._tag !== 'Acquired') throw new Error('Expected acquisition')
-    expect(outcome.credentials.credentialExpiresAt).toBe(61000)
-    expect(JSON.parse(Redacted.value(outcome.credentials.protectedPayload))).toEqual({
-      schemaVersion: 1,
-      ...source,
-      accessToken: 'access-1',
-      instanceUrl: loginUrl,
+  test('uses the retained source to renew at the reported expiry without a refresh token', async () => {
+    const clock = makeTestClock(1_000)
+    const driver = makeLifecycleDriver(clock.layer)
+    const fetch = vi
+      .fn<TestFetch>()
+      .mockResolvedValueOnce(json({ ...token, expires_in: '60' }))
+      .mockResolvedValueOnce(json({ ...token, access_token: 'renewed', issued_at: '61000' }))
+    const manager = Connections.create({
+      store: store(),
+      provider: Salesforce.clientCredentials({ loginUrl, fetch }),
     })
-    const projected = await Effect.runPromise(
-      provider.projectCredentials(outcome.credentials.protectedPayload),
-    )
-    expect(Redacted.value(projected.accessToken)).toBe('access-1')
+    try {
+      await driver.run(clock.initialize)
+      await driver.run(manager.effect.setClientCredentials('connection', source))
+      const first = await driver.run(manager.effect.credentials('connection'))
+      expect(revealSecret(first.accessToken)).toBe('access-1')
+      await driver.run(clock.advanceBy(59_999))
+      expect(
+        revealSecret((await driver.run(manager.effect.credentials('connection'))).accessToken),
+      ).toBe('access-1')
+      expect(fetch).toHaveBeenCalledOnce()
+      await driver.run(clock.advanceBy(1))
+      expect(
+        revealSecret((await driver.run(manager.effect.credentials('connection'))).accessToken),
+      ).toBe('renewed')
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(
+        fetch.mock.calls.map(([, request]) =>
+          Object.fromEntries(new URLSearchParams(String(request?.body))),
+        ),
+      ).toEqual([
+        {
+          grant_type: 'client_credentials',
+          client_id: source.clientId,
+          client_secret: source.clientSecret,
+        },
+        {
+          grant_type: 'client_credentials',
+          client_id: source.clientId,
+          client_secret: source.clientSecret,
+        },
+      ])
+    } finally {
+      await driver.dispose()
+    }
   })
 
-  test('reacquires expired credentials through the manager', async () => {
+  test('never returns already expired credentials and can acquire a fresh credential on the next read', async () => {
+    const clock = makeTestClock(1_000)
+    const driver = makeLifecycleDriver(clock.layer)
     const fetch = vi
-      .fn<typeof globalThis.fetch>()
-      .mockResolvedValueOnce(json({ ...token, expires_in: 1 }))
+      .fn<TestFetch>()
+      .mockResolvedValueOnce(json({ ...token, issued_at: '0', expires_in: 1 }))
       .mockResolvedValueOnce(json({ ...token, access_token: 'fresh', issued_at: undefined }))
     const manager = Connections.create({
       store: store(),
       provider: Salesforce.clientCredentials({ loginUrl, fetch }),
     })
-    await manager.setClientCredentials('id', {
-      ...source,
-      clientSecret: Redacted.make(source.clientSecret),
-    })
-    await expect(manager.credentials('id')).rejects.toBeDefined()
-    expect(revealSecret((await manager.credentials('id')).accessToken)).toBe('fresh')
+    try {
+      await driver.run(clock.initialize)
+      await driver.run(
+        manager.effect.setClientCredentials('id', {
+          ...source,
+          clientSecret: Redacted.make(source.clientSecret),
+        }),
+      )
+      await expect(driver.run(manager.effect.credentials('id'))).rejects.toMatchObject({
+        _tag: 'TemporarilyUnavailable',
+        cause: { _tag: 'ProviderFailure' },
+      })
+      expect(revealSecret((await driver.run(manager.effect.credentials('id'))).accessToken)).toBe(
+        'fresh',
+      )
+      expect(fetch).toHaveBeenCalledTimes(2)
+    } finally {
+      await driver.dispose()
+    }
   })
 
-  test('replaces the saved source deliberately and removes authorization', async () => {
-    const fetch = vi.fn<NonNullable<Parameters<typeof Salesforce.clientCredentials>[0]['fetch']>>(
-      async () => json(token),
-    )
+  test('replaces the saved source deliberately and removes authorization locally', async () => {
+    const fetch = vi.fn<TestFetch>(async () => json(token))
     const manager = Connections.create({
       store: store(),
       provider: Salesforce.clientCredentials({ loginUrl, fetch }),
     })
     await manager.setClientCredentials('id', source)
-    await expect(manager.setClientCredentials('id', source)).rejects.toBeDefined()
+    await expect(manager.setClientCredentials('id', source)).rejects.toMatchObject({
+      _tag: 'CredentialConfigurationFailure',
+      reason: 'Conflict',
+    })
     await manager.setClientCredentials(
       'id',
       { clientId: 'new-id', clientSecret: 'new-secret' },
       { replace: true },
     )
     await manager.credentials('id')
-    expect(String(fetch.mock.calls[0]![1]?.body)).toContain(
-      'client_id=new-id&client_secret=new-secret',
-    )
+    expect(Object.fromEntries(new URLSearchParams(String(fetch.mock.calls[0]![1]?.body)))).toEqual({
+      grant_type: 'client_credentials',
+      client_id: 'new-id',
+      client_secret: 'new-secret',
+    })
     await manager.remove('id')
     await expect(manager.credentials('id')).rejects.toMatchObject({ _tag: 'AuthorizationRequired' })
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
   test.each([
-    [400, 'ProviderRejected'],
-    [401, 'ProviderRejected'],
-    [403, 'ProviderFailure'],
-    [429, 'ProviderOutcomeUnknown'],
-    [500, 'ProviderOutcomeUnknown'],
-  ] as const)('classifies HTTP %s as %s', async (status, tag) => {
-    expect((await acquire(new Response('', { status }))).outcome).toEqual({ _tag: tag })
+    [400, 'AuthorizationRequired'],
+    [401, 'AuthorizationRequired'],
+    [403, 'TemporarilyUnavailable'],
+    [429, 'InterventionRequired'],
+    [500, 'InterventionRequired'],
+  ] as const)('reports HTTP %s as %s without replaying acquisition', async (status, tag) => {
+    const { manager, fetch } = await enrolled(new Response('', { status }))
+    await expect(manager.credentials('connection')).rejects.toMatchObject({ _tag: tag })
+    await expect(manager.credentials('connection')).rejects.toMatchObject({ _tag: tag })
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
-  test('preserves uncertainty on transport loss', async () => {
-    expect((await acquire(new Error('lost'))).outcome).toEqual({ _tag: 'ProviderOutcomeUnknown' })
+  test('retains uncertainty on transport loss without replaying acquisition', async () => {
+    const { manager, fetch } = await enrolled(new Error('lost'))
+    await expect(manager.credentials('connection')).rejects.toMatchObject({
+      _tag: 'InterventionRequired',
+      cause: { _tag: 'ProviderOutcomeUnknown' },
+    })
+    await expect(manager.credentials('connection')).rejects.toMatchObject({
+      _tag: 'InterventionRequired',
+    })
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
   test.each([
-    {},
-    { ...token, token_type: 'basic' },
-    { ...token, instance_url: 'http://example.com' },
-    { ...token, access_token: '' },
-    { ...token, expires_in: 0 },
-    { ...token, issued_at: 'bad' },
-  ])('retains uncertainty for malformed token responses', async (body) => {
-    expect((await acquire(json(body))).outcome).toEqual({ _tag: 'ProviderOutcomeUnknown' })
+    ['missing fields', {}],
+    ['unsupported token type', { ...token, token_type: 'basic' }],
+    ['insecure instance URL', { ...token, instance_url: 'http://example.com' }],
+    ['empty access token', { ...token, access_token: '' }],
+    ['invalid expiry', { ...token, expires_in: 0 }],
+    ['invalid issue time', { ...token, issued_at: 'bad' }],
+  ])('does not return credentials or replay after a response with %s', async (_name, body) => {
+    const { manager, fetch } = await enrolled(json(body))
+    await expect(manager.credentials('connection')).rejects.toMatchObject({
+      _tag: 'InterventionRequired',
+      cause: { _tag: 'ProviderOutcomeUnknown' },
+    })
+    await expect(manager.credentials('connection')).rejects.toMatchObject({
+      _tag: 'InterventionRequired',
+    })
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
-  test('retains uncertainty for malformed JSON', async () => {
-    expect((await acquire(new Response('{'))).outcome).toEqual({ _tag: 'ProviderOutcomeUnknown' })
+  test('retains uncertainty for malformed JSON without replaying acquisition', async () => {
+    const { manager, fetch } = await enrolled(new Response('{'))
+    await expect(manager.credentials('connection')).rejects.toMatchObject({
+      _tag: 'InterventionRequired',
+    })
+    await expect(manager.credentials('connection')).rejects.toMatchObject({
+      _tag: 'InterventionRequired',
+    })
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
   test.each([
@@ -182,31 +261,73 @@ describe('Salesforce client credentials', () => {
     `${loginUrl}/path`,
     `${loginUrl}?query=1`,
     'https://user:secret@example.com',
-  ])('rejects invalid endpoint %s without dispatch', async (url) => {
-    const fetch = vi.fn<typeof globalThis.fetch>()
-    const provider = Salesforce.clientCredentials({ loginUrl: url, fetch })
-    const prepared = await Effect.runPromise(provider.prepareClientCredentials(source))
-    expect(
-      await Effect.runPromise(provider.acquireCredentials({ ...prepared, now: 1000 })),
-    ).toEqual({ _tag: 'ProviderFailure', recovery: 'NotDispatched' })
+  ])('rejects an unsupported endpoint without dispatching: %s', async (url) => {
+    const fetch = vi.fn<TestFetch>()
+    const manager = Connections.create({
+      store: store(),
+      provider: Salesforce.clientCredentials({ loginUrl: url, fetch }),
+    })
+    await manager.setClientCredentials('connection', source)
+    await expect(manager.credentials('connection')).rejects.toMatchObject({
+      _tag: 'TemporarilyUnavailable',
+      cause: { _tag: 'ProviderFailure' },
+    })
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  test('rejects empty sources and incompatible stored credentials', async () => {
-    const provider = Salesforce.clientCredentials({ loginUrl })
-    await expect(
-      Effect.runPromise(provider.prepareClientCredentials({ ...source, clientSecret: '' })),
-    ).rejects.toBeDefined()
-    await expect(
-      Effect.runPromise(provider.prepareClientCredentials({ ...source, clientId: '' })),
-    ).rejects.toBeDefined()
-    expect(
-      await Effect.runPromise(
-        provider.acquireCredentials({ protectedPayload: Redacted.make('{}'), now: 1000 }),
-      ),
-    ).toEqual({ _tag: 'ProviderFailure' })
-    await expect(
-      Effect.runPromise(provider.projectCredentials(Redacted.make('{}'))),
-    ).rejects.toBeDefined()
-  })
+  test.each([
+    { ...source, clientSecret: '' },
+    { ...source, clientId: '' },
+  ])(
+    'rejects an empty source without enrolling or contacting Salesforce: %o',
+    async (credentials) => {
+      const fetch = vi.fn<TestFetch>()
+      const manager = Connections.create({
+        store: store(),
+        provider: Salesforce.clientCredentials({ loginUrl, fetch }),
+      })
+      await expect(manager.setClientCredentials('connection', credentials)).rejects.toMatchObject({
+        _tag: 'CredentialConfigurationFailure',
+        reason: 'InvalidCredentials',
+      })
+      expect(await manager.inspect('connection')).toEqual({
+        savedAuthorization: false,
+        credentialWork: 'idle',
+      })
+      expect(fetch).not.toHaveBeenCalled()
+    },
+  )
+
+  test.each([false, true])(
+    'fails safely for incompatible saved credentials (previously acquired: %s)',
+    async (acquired) => {
+      const store = makeInMemoryStore()
+      const fetch = vi.fn<TestFetch>(async () => json(token))
+      const manager = Connections.create({
+        store,
+        provider: Salesforce.clientCredentials({ loginUrl, fetch }),
+      })
+      await manager.setClientCredentials('connection', source)
+      if (acquired) await manager.credentials('connection')
+      await replaceSavedCredentialPayload(
+        store,
+        {
+          namespace: 'default',
+          providerId: 'salesforce-client-credentials',
+          connectionId: 'connection',
+        },
+        '{"diagnostic":"__stored_secret_canary__"}',
+      )
+
+      const failure = await manager.credentials('connection').catch((error: unknown) => error)
+      expect(failure).toMatchObject({
+        _tag: 'TemporarilyUnavailable',
+        cause: { _tag: 'ProviderFailure' },
+      })
+      expect([String(failure), JSON.stringify(failure), inspect(failure)].join('\n')).not.toContain(
+        '__stored_secret_canary__',
+      )
+      expect(fetch).toHaveBeenCalledTimes(acquired ? 1 : 0)
+    },
+  )
 })
