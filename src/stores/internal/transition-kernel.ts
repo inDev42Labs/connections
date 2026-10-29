@@ -12,6 +12,7 @@ import type {
   StoreCommandResult,
 } from '../../core/contracts/store.js'
 import { recoveryMatches } from '../../core/contracts/recovery.js'
+import { credentialOperationCommandKey, storeCommandKey } from '../../core/contracts/store.js'
 
 export type StoredCommand = StoreCommand | CredentialOperationCommand
 export type StoredCommandKind = StoredCommand['_tag']
@@ -38,6 +39,48 @@ export interface StoredAuthorizationAttempt {
 
 export type StoredConnection = ConnectionSnapshot & {
   readonly authorizationAttemptStateDigest: string | null
+}
+
+type AttemptIdentity = Pick<AuthorizationAttemptLookup, 'namespace' | 'stateDigest'>
+
+/** Select identities before reads, then include the connection to select its active attempt. */
+export function transitionRecordKeys(
+  command: StoredCommand,
+  connection: StoredConnection | null = null,
+): {
+  readonly key: ConnectionKey
+  readonly attempt: AttemptIdentity | null
+  readonly selectedAttempt: AttemptIdentity | null
+} {
+  const key =
+    command._tag === 'InitializeConnection' ||
+    command._tag === 'CreateAuthorizationAttempt' ||
+    command._tag === 'AdmitAuthorizationAttempt' ||
+    command._tag === 'CloseAuthorizationAttempt' ||
+    command._tag === 'CompleteAuthorizationAttempt'
+      ? storeCommandKey(command)
+      : credentialOperationCommandKey(command)
+  let attempt: AttemptIdentity | null = null
+  switch (command._tag) {
+    case 'CreateAuthorizationAttempt':
+      attempt = { namespace: key.namespace, stateDigest: command.attempt.stateDigest }
+      break
+    case 'AdmitAuthorizationAttempt':
+    case 'CompleteAuthorizationAttempt':
+      attempt = { namespace: key.namespace, stateDigest: command.admission.stateDigest }
+      break
+    case 'CloseAuthorizationAttempt':
+      attempt = { namespace: key.namespace, stateDigest: command.stateDigest }
+      break
+  }
+  return {
+    key,
+    attempt,
+    selectedAttempt:
+      connection === null || connection.authorizationAttemptStateDigest === null
+        ? null
+        : { namespace: key.namespace, stateDigest: connection.authorizationAttemptStateDigest },
+  }
 }
 
 export interface TransitionRecords {

@@ -11,6 +11,7 @@ import {
   projectAuthorizationAttempt,
   projectConnectionInspection,
   transitionCredentialOperation,
+  transitionRecordKeys,
   transitionStoreCommand,
   type StoredAuthorizationAttempt,
   type StoredCommand,
@@ -25,29 +26,6 @@ import { pruneExpiredPreparedAttempts, saveReceipt } from './receipts.js'
 
 function storageKey(key: ConnectionKey): string {
   return JSON.stringify([key.namespace, key.providerId, key.connectionId])
-}
-
-function commandKey(command: StoredCommand): ConnectionKey {
-  switch (command._tag) {
-    case 'InitializeConnection':
-    case 'CloseAuthorizationAttempt':
-    case 'SaveCredential':
-    case 'AdmitSelfClientExchange':
-    case 'CompleteSelfClientExchange':
-    case 'AcquireCredentialOperation':
-    case 'ReserveCredentialOperationDispatch':
-    case 'CompleteCredentialOperation':
-    case 'RecordCredentialOperationFailure':
-    case 'MarkCredentialOperationIntervention':
-    case 'InvalidateCredential':
-    case 'RemoveConnection':
-      return command.key
-    case 'CreateAuthorizationAttempt':
-      return command.attempt.key
-    case 'AdmitAuthorizationAttempt':
-    case 'CompleteAuthorizationAttempt':
-      return command.admission.key
-  }
 }
 
 async function connectionRow(ctx: QueryCtx | MutationCtx, key: ConnectionKey) {
@@ -156,7 +134,7 @@ async function transitionRecords(
   ctx: MutationCtx,
   command: StoredCommand,
 ): Promise<TransitionRecords> {
-  const key = commandKey(command)
+  const { key } = transitionRecordKeys(command)
   const receiptRow = await ctx.db
     .query('receipts')
     .withIndex('by_namespace_request', (query) =>
@@ -167,28 +145,22 @@ async function transitionRecords(
     await pruneExpiredPreparedAttempts(ctx, command.attempt.createdAt)
   }
   const connection = await readConnection(ctx, key)
-  let attempt: StoredAuthorizationAttempt | null = null
-  switch (command._tag) {
-    case 'CreateAuthorizationAttempt':
-      attempt = attemptRecord(
-        await attemptRow(ctx, command.attempt.key.namespace, command.attempt.stateDigest),
-      )
-      break
-    case 'AdmitAuthorizationAttempt':
-    case 'CompleteAuthorizationAttempt':
-      attempt = attemptRecord(
-        await attemptRow(ctx, command.admission.key.namespace, command.admission.stateDigest),
-      )
-      break
-    case 'CloseAuthorizationAttempt':
-      attempt = attemptRecord(await attemptRow(ctx, command.key.namespace, command.stateDigest))
-      break
-  }
-  const selectedAttempt =
-    connection?.authorizationAttemptStateDigest === null || connection === null
+  const selection = transitionRecordKeys(command, connection)
+  const attempt =
+    selection.attempt === null
       ? null
       : attemptRecord(
-          await attemptRow(ctx, key.namespace, connection.authorizationAttemptStateDigest),
+          await attemptRow(ctx, selection.attempt.namespace, selection.attempt.stateDigest),
+        )
+  const selectedAttempt =
+    selection.selectedAttempt === null
+      ? null
+      : attemptRecord(
+          await attemptRow(
+            ctx,
+            selection.selectedAttempt.namespace,
+            selection.selectedAttempt.stateDigest,
+          ),
         )
   return { connection, attempt, selectedAttempt, receipt: receiptRecord(receiptRow) }
 }
@@ -202,7 +174,7 @@ async function commit(
   if (writes.connection !== undefined) await writeConnection(ctx, writes.connection)
   for (const stored of writes.attempts ?? []) await writeAttempt(ctx, stored)
   if (writes.receipt !== undefined) {
-    const key = commandKey(command)
+    const { key } = transitionRecordKeys(command)
     await saveReceipt(ctx, {
       namespace: key.namespace,
       requestId: command.request.requestId,
