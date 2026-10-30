@@ -177,6 +177,24 @@ function configuredFixture<Error, Requirements>(
   }
 }
 
+/** Arranges valid encryption around corrupt provider data without bypassing credential reads. */
+export async function replaceSavedCredentialPayload<Error>(
+  store: InMemoryStoreFixture<Error, never>,
+  key: ConnectionKey,
+  payload: string,
+): Promise<void> {
+  const saved = store.unsafeReadConnection(key)
+  if (saved === null) throw new Error('Expected saved credentials')
+  const envelope = await Effect.runPromise(
+    store.protect(Redacted.make(payload), {
+      ...key,
+      generation: saved.generation,
+      purpose: 'credentials',
+    }),
+  )
+  store.unsafeReplaceCredentialEnvelope(key, envelope)
+}
+
 export function makeInMemoryStore(): InMemoryStoreFixture<EncryptionFailure, never>
 export function makeInMemoryStore<Error, Requirements>(options: {
   readonly encryptor: CredentialEncryptor<Error, Requirements>

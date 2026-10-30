@@ -48,14 +48,11 @@ describe('client credentials replacement and removal fencing', () => {
     await Effect.runPromise(value.connection.remove('connection'))
 
     await expectRemoved(value.connection)
-    expect(value.store.diagnostics.commands.RemoveConnection).toBe(2)
-    expect(
-      value.store.unsafeReadConnection({
-        namespace: 'default',
-        providerId: value.provider.provider.id,
-        connectionId: 'connection',
-      }),
-    ).toMatchObject({ generation: 1, revision: 2 })
+    await Effect.runPromise(value.connection.remove('connection'))
+    await expect(Effect.runPromise(value.connection.inspect('connection'))).resolves.toEqual({
+      savedAuthorization: false,
+      credentialWork: 'idle',
+    })
     expect(value.provider.requests()).toBe(0)
   })
 
@@ -76,7 +73,6 @@ describe('client credentials replacement and removal fencing', () => {
     const current = await Effect.runPromise(value.connection.credentialUse('connection'))
     expect(Redacted.value(current.credentials.token)).toBe('token-1')
     expect(value.provider.acquiredSources()).toEqual(['new-source'])
-    expect(value.store.diagnostics.commands.RemoveConnection).toBe(2)
   })
 
   test.each([
@@ -178,13 +174,10 @@ describe('client credentials replacement and removal fencing', () => {
       ).rejects.toMatchObject({
         _tag: _outcome === 'ProviderFailure' ? 'TemporarilyUnavailable' : 'InterventionRequired',
       })
-      expect(
-        value.store.unsafeReadConnection({
-          namespace: 'default',
-          providerId: 'deterministic-client-credentials',
-          connectionId: 'connection',
-        })?.credentialOperation?.phase._tag,
-      ).toBe(_outcome === 'ProviderFailure' ? 'KnownFailure' : 'InterventionRequired')
+      await expect(Effect.runPromise(value.connection.inspect('connection'))).resolves.toEqual({
+        savedAuthorization: true,
+        credentialWork: _outcome === 'ProviderFailure' ? 'known-failure' : 'intervention-required',
+      })
 
       await transition(value)
       expect(value.provider.requests()).toBe(1)

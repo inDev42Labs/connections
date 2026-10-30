@@ -1,31 +1,52 @@
-import { Effect, Redacted } from 'effect'
+import { inspect } from 'node:util'
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { Salesforce } from '../../../src/providers/salesforce/index.js'
+import { Connections, revealSecret } from '../../../src/index.js'
+import { Salesforce, type SalesforceOAuth } from '../../../src/providers/salesforce/index.js'
+import { Memory } from '../../../src/stores/memory/index.js'
 import {
   startSalesforceServer,
   type SalesforceTestServer,
 } from '../../fixtures/salesforce-server.js'
 
 const servers = new Set<SalesforceTestServer>()
+const redirectUri = 'https://app.example.test/oauth/callback'
+type TestFetch = (...args: Parameters<typeof globalThis.fetch>) => Promise<Response>
 
-type TestFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
-
-function provider(loginUrl: string) {
-  return Salesforce.oauth({
-    clientId: 'client-id',
-    clientSecret: Effect.succeed(Redacted.make('client-secret')),
-    redirectUri: 'https://app.example.test/oauth/callback',
-    scopes: ['api', 'refresh_token'],
-    loginUrl,
+function manager(options: Partial<SalesforceOAuth['configuration']> = {}) {
+  return Connections.create({
+    provider: Salesforce.oauth({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      redirectUri,
+      scopes: ['api', 'refresh_token'],
+      ...options,
+    }),
+    store: Memory.store({ encryptionKey: 'KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio=' }),
   })
 }
 
-function exchange(loginUrl: string) {
-  return provider(loginUrl).exchangeAuthorizationCode({
-    code: Redacted.make('authorization-code'),
-    codeVerifier: Redacted.make('pkce-verifier'),
-    now: 1_000,
+async function authorize(configured = manager()) {
+  const start = await configured.startAuthorization('connection', { binding: 'session' })
+  const callback = new URL(redirectUri)
+  callback.search = new URLSearchParams({
+    code: 'authorization-code',
+    state: new URL(start.url).searchParams.get('state')!,
+  }).toString()
+  await configured.completeAuthorization({
+    callbackUrl: callback.toString(),
+    binding: 'session',
+    authorize: () => undefined,
   })
+  return configured.credentials('connection')
+}
+
+function tokenResponse() {
+  return {
+    access_token: 'access-token',
+    refresh_token: 'refresh-token',
+    instance_url: 'https://instance.example.test',
+    token_type: 'Bearer',
+  }
 }
 
 afterEach(async () => {
@@ -35,126 +56,63 @@ afterEach(async () => {
   servers.clear()
 })
 
-describe('Salesforce token transport', () => {
-  test('supports plain and lazy browser OAuth configuration', async () => {
+describe('Salesforce browser OAuth HTTP behavior', () => {
+  test('accepts plain and lazy configuration without accessing configuration during construction', async () => {
     const clientId = vi.fn<() => string>(() => 'client-id')
     const clientSecret = vi.fn<() => string>(() => 'client-secret')
-    const redirectUri = vi.fn<() => string>(() => 'https://app.example.test/oauth/callback')
+    const redirect = vi.fn<() => string>(() => redirectUri)
     const loginUrl = vi.fn<() => string>(() => 'https://login.example.test')
-    const fetchMock = vi.fn<TestFetch>(() =>
-      Promise.resolve(
-        Response.json({
-          access_token: 'access-token',
-          refresh_token: 'refresh-token',
-          instance_url: 'https://instance.example.test',
-          token_type: 'Bearer',
-        }),
-      ),
-    )
-    vi.stubGlobal('fetch', fetchMock)
-
-    const lazyProvider = Salesforce.oauth({
-      clientId,
-      clientSecret,
-      redirectUri,
-      loginUrl,
-      scopes: ['api', 'refresh_token'],
-    })
+    const fetch = vi.fn<TestFetch>(async () => Response.json(tokenResponse()))
+    vi.stubGlobal('fetch', fetch)
+    const lazy = manager({ clientId, clientSecret, redirectUri: redirect, loginUrl })
     expect(clientId).not.toHaveBeenCalled()
     expect(clientSecret).not.toHaveBeenCalled()
-    expect(redirectUri).not.toHaveBeenCalled()
+    expect(redirect).not.toHaveBeenCalled()
     expect(loginUrl).not.toHaveBeenCalled()
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
 
-    await Effect.runPromise(
-      lazyProvider.exchangeAuthorizationCode({
-        code: Redacted.make('authorization-code'),
-        codeVerifier: Redacted.make('pkce-verifier'),
-        now: 1_000,
-      }),
+    expect(revealSecret((await authorize(lazy)).accessToken)).toBe('access-token')
+    const lazyRequest = fetch.mock.calls[0]!
+    expect(String(lazyRequest[0])).toBe('https://login.example.test/services/oauth2/token')
+    expect(new URLSearchParams(String(lazyRequest[1]?.body)).get('client_secret')).toBe(
+      'client-secret',
     )
-
-    expect(clientId).toHaveBeenCalledOnce()
-    expect(clientSecret).toHaveBeenCalledOnce()
-    expect(redirectUri).toHaveBeenCalledOnce()
-    expect(loginUrl).toHaveBeenCalledOnce()
-    const requestBody = fetchMock.mock.calls[0]?.[1]?.body
-    expect(requestBody).toBeInstanceOf(URLSearchParams)
-    expect((requestBody as URLSearchParams).get('client_secret')).toBe('client-secret')
-
-    const plainProvider = Salesforce.oauth({
-      clientId: 'client-id',
-      clientSecret: 'plain-client-secret',
-      redirectUri: 'https://app.example.test/oauth/callback',
-      scopes: ['api', 'refresh_token'],
-    })
-    await Effect.runPromise(
-      plainProvider.exchangeAuthorizationCode({
-        code: Redacted.make('authorization-code'),
-        codeVerifier: Redacted.make('pkce-verifier'),
-        now: 1_000,
-      }),
+    expect(
+      revealSecret((await authorize(manager({ clientSecret: 'plain-client-secret' }))).accessToken),
+    ).toBe('access-token')
+    expect(new URLSearchParams(String(fetch.mock.calls[1]?.[1]?.body)).get('client_secret')).toBe(
+      'plain-client-secret',
     )
-    const plainBody = fetchMock.mock.calls[1]?.[1]?.body
-    expect(plainBody).toBeInstanceOf(URLSearchParams)
-    expect((plainBody as URLSearchParams).get('client_secret')).toBe('plain-client-secret')
   })
 
-  test('maps missing or throwing configuration getters to safe invalid configuration failures', async () => {
-    const fetchMock = vi.fn<TestFetch>()
-    vi.stubGlobal('fetch', fetchMock)
-    const input = {
-      code: Redacted.make('authorization-code'),
-      codeVerifier: Redacted.make('pkce-verifier'),
-      now: 1_000,
-    }
-    const missingSecret = Salesforce.oauth({
-      clientId: 'client-id',
-      clientSecret: () => undefined as unknown as string,
-      redirectUri: 'https://app.example.test/oauth/callback',
-      scopes: ['api', 'refresh_token'],
+  test('fails safely without dispatch when configuration is missing or throws', async () => {
+    const fetch = vi.fn<TestFetch>()
+    vi.stubGlobal('fetch', fetch)
+    await expect(
+      authorize(manager({ clientSecret: () => undefined as unknown as string })),
+    ).rejects.toMatchObject({
+      _tag: 'AuthorizationFailure',
+      reason: 'ProviderFailure',
     })
-    const secretFailure = await Effect.runPromise(
-      Effect.flip(missingSecret.exchangeAuthorizationCode(input)),
-    )
-    expect(secretFailure).toMatchObject({ reason: 'InvalidConfiguration' })
-
-    const secretInThrownError = 'do-not-leak-this-secret'
-    const throwingClientId = Salesforce.oauth({
+    const canary = 'do-not-leak-this-secret'
+    const throwing = manager({
       clientId: () => {
-        throw new Error(secretInThrownError)
+        throw new Error(canary)
       },
-      clientSecret: 'client-secret',
-      redirectUri: 'https://app.example.test/oauth/callback',
-      scopes: ['api', 'refresh_token'],
     })
-    const clientIdFailure = await Effect.runPromise(
-      Effect.flip(
-        throwingClientId.authorizationUrl({
-          state: 'state-value',
-          codeChallenge: 'pkce-challenge',
-        }),
-      ),
+    const failure = await throwing
+      .startAuthorization('connection', { binding: 'session' })
+      .catch((error: unknown) => error)
+    expect(failure).toMatchObject({ _tag: 'AuthorizationFailure', reason: 'ProviderFailure' })
+    expect([JSON.stringify(failure), String(failure), inspect(failure)].join('\n')).not.toContain(
+      canary,
     )
-    expect(clientIdFailure).toMatchObject({ reason: 'InvalidConfiguration' })
-    expect(JSON.stringify(clientIdFailure)).not.toContain(secretInThrownError)
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   test('rejects a token redirect without exfiltrating the POST body', async () => {
     const redirectTarget = await startSalesforceServer({
-      token: [
-        {
-          _tag: 'Response',
-          status: 200,
-          json: {
-            access_token: 'redirected-access-token',
-            refresh_token: 'redirected-refresh-token',
-            instance_url: 'https://instance.example.test',
-            token_type: 'Bearer',
-          },
-        },
-      ],
+      token: [{ _tag: 'Response', status: 200, json: tokenResponse() }],
     })
     servers.add(redirectTarget)
     const tokenEndpoint = await startSalesforceServer({
@@ -170,9 +128,10 @@ describe('Salesforce token transport', () => {
     })
     servers.add(tokenEndpoint)
 
-    const failure = await Effect.runPromise(Effect.flip(exchange(tokenEndpoint.loginUrl)))
-
-    expect(failure).toMatchObject({ reason: 'TransportFailure' })
+    await expect(authorize(manager({ loginUrl: tokenEndpoint.loginUrl }))).rejects.toMatchObject({
+      _tag: 'AuthorizationFailure',
+      reason: 'InterventionRequired',
+    })
     expect(tokenEndpoint.tokenRequestCount).toBe(1)
     expect(redirectTarget.tokenRequestCount).toBe(0)
   })
@@ -185,101 +144,81 @@ describe('Salesforce token transport', () => {
     ['issued_at', ''],
     ['issued_at', -1],
     ['issued_at', null],
-  ] as const)('rejects a present invalid %s field as malformed', async (field, value) => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve(
-          Response.json({
-            access_token: 'access-token',
-            refresh_token: 'refresh-token',
-            instance_url: 'https://instance.example.test',
-            token_type: 'Bearer',
-            [field]: value,
-          }),
-        ),
-      ),
+  ] as const)(
+    'does not authorize credentials with a present invalid %s field: %s',
+    async (field, value) => {
+      const fetch = vi.fn<TestFetch>(async () =>
+        Response.json({ ...tokenResponse(), [field]: value }),
+      )
+      vi.stubGlobal('fetch', fetch)
+
+      await expect(authorize()).rejects.toMatchObject({
+        _tag: 'AuthorizationFailure',
+        reason: 'ProviderFailure',
+      })
+      expect(fetch).toHaveBeenCalledOnce()
+    },
+  )
+
+  test('returns reusable credentials when Salesforce omits optional timing fields', async () => {
+    const fetch = vi.fn<TestFetch>(async () => Response.json(tokenResponse()))
+    vi.stubGlobal('fetch', fetch)
+    const configured = manager()
+    const credentials = await authorize(configured)
+    expect(revealSecret(credentials.accessToken)).toBe('access-token')
+    expect(credentials.instanceUrl).toBe('https://instance.example.test')
+    expect(revealSecret((await configured.credentials('connection')).accessToken)).toBe(
+      'access-token',
     )
-
-    const failure = await Effect.runPromise(Effect.flip(exchange('https://login.example.test')))
-
-    expect(failure).toMatchObject({ reason: 'MalformedResponse' })
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
-  test('accepts a token response that omits optional timing fields', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve(
-          Response.json({
-            access_token: 'access-token',
-            refresh_token: 'refresh-token',
-            instance_url: 'https://instance.example.test',
-            token_type: 'Bearer',
-          }),
-        ),
-      ),
-    )
-
-    await expect(Effect.runPromise(exchange('https://login.example.test'))).resolves.toMatchObject({
-      credentialExpiresAt: null,
-    })
-  })
-
-  test('rejects a token response body larger than one MiB before parsing it', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(new Response(new Uint8Array(1024 * 1024 + 1), { status: 200 }))),
-    )
-
-    const failure = await Effect.runPromise(Effect.flip(exchange('https://login.example.test')))
-
-    expect(failure).toMatchObject({ reason: 'MalformedResponse' })
-  })
-
-  test('keeps the 30-second abort boundary active while reading the response body', async () => {
-    vi.useFakeTimers()
-    let responseController: ReadableStreamDefaultController<Uint8Array> | undefined
-    let requestSignal: AbortSignal | null | undefined
-    let requestStarted: () => void = () => undefined
-    const started = new Promise<void>((resolve) => {
-      requestStarted = resolve
-    })
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-        requestSignal = init?.signal
-        const body = new ReadableStream<Uint8Array>({
-          start(controller) {
-            responseController = controller
-            requestSignal?.addEventListener(
-              'abort',
-              () => controller.error(new DOMException('Aborted', 'AbortError')),
-              { once: true },
-            )
-          },
-        })
-        requestStarted()
-        return Promise.resolve(
-          new Response(body, { status: 200, headers: { 'content-type': 'application/json' } }),
-        )
+  test('rejects an otherwise usable token response larger than one MiB', async () => {
+    const fetch = vi.fn<TestFetch>(async () =>
+      Response.json({
+        ...tokenResponse(),
+        access_token: 'x'.repeat(1024 * 1024),
       }),
     )
+    vi.stubGlobal('fetch', fetch)
+    await expect(authorize()).rejects.toMatchObject({
+      _tag: 'AuthorizationFailure',
+      reason: 'ProviderFailure',
+    })
+    expect(fetch).toHaveBeenCalledOnce()
+  })
 
-    const result = Effect.runPromise(Effect.flip(exchange('https://login.example.test')))
-    await started
-
+  test('aborts a stalled token response and reports uncertainty instead of completing authorization', async () => {
+    vi.useFakeTimers()
+    const started = Promise.withResolvers<AbortSignal>()
+    const fetch = vi.fn<TestFetch>(async (_url, init) => {
+      if (init?.signal == null) throw new Error('Expected cancellation signal')
+      const signal = init.signal
+      const response = new Response(
+        new ReadableStream({
+          start(controller) {
+            signal.addEventListener('abort', () =>
+              controller.error(new DOMException('Aborted', 'AbortError')),
+            )
+          },
+        }),
+      )
+      started.resolve(signal)
+      return response
+    })
+    vi.stubGlobal('fetch', fetch)
+    const result = authorize().catch((error: unknown) => error)
+    const signal = await started.promise
     try {
       await vi.advanceTimersByTimeAsync(30_000)
-      expect(requestSignal?.aborted).toBe(true)
-      await expect(result).resolves.toMatchObject({ reason: 'TransportFailure' })
+      expect(await result).toMatchObject({
+        _tag: 'AuthorizationFailure',
+        reason: 'InterventionRequired',
+      })
+      expect(signal.aborted).toBe(true)
     } finally {
-      try {
-        responseController?.error(new Error('test cleanup'))
-      } catch {
-        // The timeout already errored the stream.
-      }
-      await result.catch(() => undefined)
+      await vi.runAllTimersAsync()
+      await result
     }
   })
 })

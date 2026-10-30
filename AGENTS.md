@@ -10,6 +10,7 @@ Use README's [Project documentation](README.md#project-documentation) and [Agent
 - Before exploring domain concepts or proposing terminology changes, read [domain guidance](docs/agents/domain.md) and the [glossary](GLOSSARY.md).
 - When evaluating consequential trade-offs or creating or revisiting records, read [decision-record guidance](docs/agents/decision-records.md).
 - Before changing governed work or proposing amendments, read the [constitution](CONSTITUTION.md) and its [agent guidance](docs/agents/constitution.md).
+- Before adding, changing, or removing tests, read the [testing guidance](docs/testing.md) for approved seams and coverage-preserving migration requirements.
 - Before changing code, read the repository's [lint](.oxlintrc.json) and [format](.oxfmtrc.json) configuration.
 
 ## Read the current target

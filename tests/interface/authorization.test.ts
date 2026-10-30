@@ -5,7 +5,6 @@ import type { EncryptionContext } from '../../src/core/contracts/encryptor.js'
 import {
   AuthorizationFailure,
   Connections,
-  type AuthorizationStart,
   type ReadCredentialFailure as CredentialFailure,
 } from '../../src/index.js'
 import { AesGcm } from '../../src/encryptors/aes-gcm/index.js'
@@ -108,33 +107,7 @@ afterEach(async () => {
 })
 
 describe('Salesforce browser authorization', () => {
-  test('application denial and cross-connection authority stop before startAuthorization', async () => {
-    const fixture = await makeFixture()
-    const allowed = new Set(['conn_acme'])
-    const startAsApplication = (
-      callerAllowed: boolean,
-      connectionId: string,
-    ): Effect.Effect<AuthorizationStart, AuthorizationFailure | ApplicationDenied> =>
-      callerAllowed && allowed.has(connectionId)
-        ? fixture.manager.effect.startAuthorization(connectionId, {
-            binding: 'trusted-session',
-            replace: false,
-          })
-        : Effect.fail(new ApplicationDenied())
-
-    await expect(Effect.runPromise(startAsApplication(false, 'conn_acme'))).rejects.toThrow(
-      ApplicationDenied,
-    )
-    await expect(Effect.runPromise(startAsApplication(true, 'conn_globex'))).rejects.toThrow(
-      ApplicationDenied,
-    )
-    expect(fixture.store.diagnostics.reads).toBe(0)
-    expect(fixture.store.diagnostics.executions).toBe(0)
-    expect(fixture.server.authorizationRequestCount).toBe(0)
-    expect(fixture.server.tokenRequestCount).toBe(0)
-  })
-
-  test('rejects insecure non-loopback OAuth endpoints before persisting an attempt', async () => {
+  test('rejects insecure non-loopback OAuth endpoints without authorizing a connection', async () => {
     const store = makeInMemoryStore()
     const manager = Connections.create({
       provider: Salesforce.oauth({
@@ -154,7 +127,13 @@ describe('Salesforce browser authorization', () => {
         )
       ).reason,
     ).toBe('ProviderFailure')
-    expect(store.diagnostics.executions).toBe(0)
+    await expect(manager.inspect('conn_acme')).resolves.toEqual({
+      savedAuthorization: false,
+      credentialWork: 'idle',
+    })
+    await expect(manager.credentials('conn_acme')).rejects.toMatchObject({
+      _tag: 'AuthorizationRequired',
+    })
   })
 
   test('binds random state, S256 PKCE, stored target, and stored intent to completion', async () => {
@@ -589,14 +568,12 @@ describe('Salesforce browser authorization', () => {
         authorize: () => Effect.runPromise(Effect.void.pipe(Effect.asVoid)),
       }),
     )
-    const snapshot = fixture.store.unsafeReadConnection({
-      namespace: 'default',
-      providerId: 'salesforce',
-      connectionId: 'conn_acme',
-    })
-
     expect(failure.reason).toBe('StorageFailure')
-    expect(snapshot?.authorization).toEqual({ _tag: 'NotAuthorized' })
+    await expect(
+      Effect.runPromise(fixture.manager.effect.inspect('conn_acme')),
+    ).resolves.toMatchObject({
+      savedAuthorization: false,
+    })
     expect((await credentialFailure(fixture.manager.effect.credentialUse('conn_acme')))._tag).toBe(
       'AuthorizationRequired',
     )

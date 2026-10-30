@@ -7,12 +7,6 @@ import { makeTestClock } from '../fixtures/lifecycle-driver.js'
 import { makeYotpoTokenSubstitute, yotpoTokenResponse } from '../fixtures/yotpo-server.js'
 import { Yotpo } from '../../src/providers/yotpo/index.js'
 
-const connectionKey = (connectionId: string) => ({
-  namespace: 'default',
-  providerId: 'deterministic-client-credentials',
-  connectionId,
-})
-
 function fixture() {
   const provider = makeDeterministicClientCredentialsProvider()
   const manager = Connections.create({
@@ -27,7 +21,7 @@ afterEach(() => {
 })
 
 describe('client credentials enrollment interface', () => {
-  test('enrolls and explicitly replaces provider-specific sources locally without acquisition', async () => {
+  test('keeps enrollment and replacement local and only uses deliberately selected sources', async () => {
     const provider = makeDeterministicClientCredentialsProvider()
     const store = makeInMemoryStore()
     const manager = Connections.create({ provider: provider.provider, store })
@@ -40,7 +34,6 @@ describe('client credentials enrollment interface', () => {
         { replace: false },
       ),
     )
-    const enrolled = store.unsafeReadConnection(connectionKey('conn_acme'))
     await expect(
       Effect.runPromise(
         Effect.flip(
@@ -52,7 +45,9 @@ describe('client credentials enrollment interface', () => {
         ),
       ),
     ).resolves.toMatchObject({ _tag: 'CredentialConfigurationFailure', reason: 'Conflict' })
-    expect(store.unsafeReadConnection(connectionKey('conn_acme'))).toEqual(enrolled)
+    expect(provider.requests()).toBe(0)
+    await Effect.runPromise(connection.credentials('conn_acme'))
+    expect(provider.acquiredSources()).toEqual(['first-source'])
 
     await Effect.runPromise(
       connection.setClientCredentials(
@@ -61,8 +56,11 @@ describe('client credentials enrollment interface', () => {
         { replace: true },
       ),
     )
-    expect(store.unsafeReadConnection(connectionKey('conn_acme'))?.generation).toBe(1)
-    expect(provider.requests()).toBe(0)
+    expect(provider.requests()).toBe(1)
+    provider.issue('replacement-token')
+    const current = await Effect.runPromise(connection.credentials('conn_acme'))
+    expect(Redacted.value(current.token)).toBe('replacement-token')
+    expect(provider.acquiredSources()).toEqual(['first-source', 'replacement-source'])
   })
 
   test('keeps application-defined connection IDs independently enrolled and inspection local', async () => {
@@ -88,10 +86,20 @@ describe('client credentials enrollment interface', () => {
       savedAuthorization: false,
       credentialWork: 'idle',
     })
-    expect(store.unsafeReadConnection(connectionKey('tenant_acme'))).not.toEqual(
-      store.unsafeReadConnection(connectionKey('tenant_globex')),
-    )
     expect(provider.requests()).toBe(0)
+    await Effect.runPromise(
+      globex.setClientCredentials('tenant_globex', { source: Redacted.make('globex-source') }),
+    )
+    provider.issue('acme-token')
+    const acmeCredentials = await Effect.runPromise(acme.credentials('tenant_acme'))
+    provider.issue('globex-token')
+    const globexCredentials = await Effect.runPromise(globex.credentials('tenant_globex'))
+    expect(Redacted.value(acmeCredentials.token)).toBe('acme-token')
+    expect(Redacted.value(globexCredentials.token)).toBe('globex-token')
+    expect(Redacted.value((await Effect.runPromise(acme.credentials('tenant_acme'))).token)).toBe(
+      'acme-token',
+    )
+    expect(provider.acquiredSources()).toEqual(['acme-source', 'globex-source'])
   })
 
   test('keeps removal local and lazy', async () => {

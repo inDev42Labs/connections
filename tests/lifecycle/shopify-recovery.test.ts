@@ -4,11 +4,15 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Effect, Exit, Redacted } from 'effect'
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, expect, onTestFinished, test, vi } from 'vitest'
 import { Connections, revealSecret } from '../../src/index.js'
 import { Shopify } from '../../src/providers/shopify/index.js'
 import { SQLite } from '../../src/stores/sqlite/index.js'
-import { makeLifecycleDriver, makeTestClock } from '../fixtures/lifecycle-driver.js'
+import {
+  makeLifecycleDriver,
+  makeTestClock,
+  waitForLifecycle as eventually,
+} from '../fixtures/lifecycle-driver.js'
 
 const shopDomain = 'recovery-test.myshopify.com'
 const redirectUri = 'https://app.example.test/shopify/callback'
@@ -29,39 +33,42 @@ const tokenBody = (accessToken = 'access-token') => ({
   refresh_token_expires_in: 7_776_000,
   scope: 'read_products',
 })
-const payload = Redacted.make(
-  JSON.stringify({
-    schemaVersion: 1,
-    accessToken: 'old-access',
-    refreshToken: 'old-refresh',
-    shopDomain,
-    credentialExpiresAt: 1,
-    refreshTokenExpiresAt: 7_776_001_000,
-  }),
-)
 type TestFetch = (url: string | URL | Request, init?: RequestInit) => Promise<Response>
 
-async function eventually(check: () => boolean) {
-  await vi.waitFor(
-    () => {
-      if (!check()) throw new Error('Lifecycle did not reach expected checkpoint')
-    },
-    { timeout: 2_000, interval: 5 },
-  )
-}
-
-async function fixture(configuredProvider = provider()) {
+async function fixture(configuredProvider = provider(), decryptionDelay = 0) {
   const directory = mkdtempSync(join(tmpdir(), 'shopify-recovery-'))
   const path = join(directory, 'connections.sqlite')
   let database = new DatabaseSync(path)
   const clock = makeTestClock(1_000)
   const driver = makeLifecycleDriver(clock.layer)
+  let cleanup: Promise<void> | undefined
+  const dispose = () =>
+    (cleanup ??= (async () => {
+      await driver.dispose()
+      if (database.isOpen) database.close()
+      rmSync(directory, { recursive: true, force: true })
+    })())
+  onTestFinished(dispose)
   await driver.run(clock.initialize)
-  const manager = () =>
-    Connections.create({
-      store: SQLite.store({ database, encryptionKey }),
+  let ready = false
+  const decryptionReached = Promise.withResolvers<void>()
+  const manager = () => {
+    const store = SQLite.store({ database, encryptionKey })
+    return Connections.create({
+      store: {
+        ...store,
+        unprotect: (...args: Parameters<typeof store.unprotect>) =>
+          Effect.suspend(() => {
+            if (!ready) return store.unprotect(...args)
+            decryptionReached.resolve()
+            return decryptionDelay === 0
+              ? store.unprotect(...args)
+              : Effect.sleep(decryptionDelay).pipe(Effect.andThen(store.unprotect(...args)))
+          }),
+      },
       provider: configuredProvider,
     })
+  }
   const initial = manager()
   const start = await driver.run(
     initial.effect.startAuthorization('shop', { binding: 'trusted-session' }),
@@ -99,133 +106,128 @@ async function fixture(configuredProvider = provider()) {
     }),
   )
   await driver.run((await driver.run(initial.effect.credentialUse('shop'))).reportRejected())
+  ready = true
   return {
     clock,
     driver,
     manager,
+    decryptionReached: decryptionReached.promise,
     reopen: () => {
       database.close()
       database = new DatabaseSync(path)
     },
-    dispose: async () => {
-      await driver.dispose()
-      database.close()
-      rmSync(directory, { recursive: true, force: true })
-    },
+    dispose,
   }
 }
 
 afterEach(() => vi.unstubAllGlobals())
 
-test('lifecycle checkpoints allow asynchronous work beyond 100 event-loop turns', async () => {
-  let reached = false
-  const completed = eventually(() => reached).then(
-    () => true,
-    () => false,
-  )
-  for (let turn = 0; turn < 120; turn++) {
-    await new Promise<void>((resolve) => setImmediate(resolve))
-  }
-  reached = true
-  expect(await completed).toBe(true)
-})
-
 test('Shopify waits 250ms and 750ms between at most three refresh attempts', async () => {
-  const clock = makeTestClock(1_000)
-  const driver = makeLifecycleDriver(clock.layer)
-  await driver.run(clock.initialize)
   const fetch = vi
     .fn<TestFetch>()
+    .mockResolvedValueOnce(Response.json(tokenBody('initial')))
     .mockRejectedValueOnce(new TypeError('lost response'))
     .mockResolvedValueOnce(new Response(null, { status: 503 }))
     .mockResolvedValueOnce(Response.json(tokenBody('recovered')))
   vi.stubGlobal('fetch', fetch)
-  const run = driver.start(provider().refreshCredentials({ protectedPayload: payload, now: 1_000 }))
+  const target = await fixture()
+  const run = target.driver.start(target.manager().effect.credentials('shop'))
   try {
-    await eventually(() => fetch.mock.calls.length === 1)
-    await driver.run(clock.advanceBy(249))
-    expect(fetch).toHaveBeenCalledTimes(1)
-    await driver.run(clock.advanceBy(1))
     await eventually(() => fetch.mock.calls.length === 2)
-    await driver.run(clock.advanceBy(749))
+    await target.driver.run(target.clock.advanceBy(249))
     expect(fetch).toHaveBeenCalledTimes(2)
-    await driver.run(clock.advanceBy(1))
-    const exit = await run.exit
-    expect(exit).toMatchObject({ value: { _tag: 'Refreshed' } })
+    await target.driver.run(target.clock.advanceBy(1))
+    await eventually(() => fetch.mock.calls.length === 3)
+    await target.driver.run(target.clock.advanceBy(749))
     expect(fetch).toHaveBeenCalledTimes(3)
+    await target.driver.run(target.clock.advanceBy(1))
+    const exit = await run.exit
+    if (!Exit.isSuccess(exit)) throw new Error('Expected recovered credential read')
+    expect(revealSecret(exit.value.accessToken)).toBe('recovered')
+    expect(fetch).toHaveBeenCalledTimes(4)
   } finally {
     run.interrupt()
     await run.exit
-    await driver.dispose()
+    await target.dispose()
   }
 })
 
-test.each([undefined, 1_300])(
-  'Shopify aborts a stalled request at the shared deadline, deadline: %s',
-  async (deadline) => {
-    const clock = makeTestClock(1_000)
-    const driver = makeLifecycleDriver(clock.layer)
-    await driver.run(clock.initialize)
+test.each([0, 24_700])(
+  'Shopify shortens the HTTP budget after storage consumes %s ms of renewal ownership',
+  async (decryptionDelay) => {
     let signal: AbortSignal | undefined
-    const fetch = vi.fn<TestFetch>(
-      async (_url, init) =>
-        new Promise<Response>((_resolve, reject) => {
-          if (init?.signal == null) throw new Error('Expected abort signal')
-          signal = init.signal
-          signal.addEventListener('abort', () => reject(new TypeError('aborted')), { once: true })
-        }),
-    )
+    const fetch = vi
+      .fn<TestFetch>()
+      .mockResolvedValueOnce(Response.json(tokenBody('initial')))
+      .mockImplementation(
+        async (_url, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            if (init?.signal == null) throw new Error('Expected abort signal')
+            signal = init.signal
+            signal.addEventListener('abort', () => reject(new TypeError('aborted')), { once: true })
+          }),
+      )
     vi.stubGlobal('fetch', fetch)
-    const budget = deadline === undefined ? 25_000 : 300
-    const run = driver.start(
-      provider().refreshCredentials({
-        protectedPayload: payload,
-        now: 1_000,
-        ...(deadline === undefined ? {} : { deadline }),
-      }),
-    )
+    const target = await fixture(provider(), decryptionDelay)
+    const run = target.driver.start(Effect.flip(target.manager().effect.credentials('shop')))
     try {
-      await eventually(() => fetch.mock.calls.length === 1)
-      await driver.run(clock.advanceBy(budget - 1))
+      await target.decryptionReached
+      await target.driver.run(target.clock.advanceBy(decryptionDelay))
+      await eventually(() => fetch.mock.calls.length === 2)
+      await target.driver.run(target.clock.advanceBy(25_000 - decryptionDelay - 1))
       expect(signal?.aborted).toBe(false)
-      await driver.run(clock.advanceBy(1))
-      expect(await run.exit).toMatchObject({
-        value: {
-          _tag: 'ProviderFailure',
-          recovery: { _tag: 'ReplaySafe', retryUntil: 2_592_001_000 },
-        },
-      })
+      await target.driver.run(target.clock.advanceBy(1))
       expect(signal?.aborted).toBe(true)
-      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(await run.exit).toMatchObject({ value: { _tag: 'TemporarilyUnavailable' } })
+      expect(fetch).toHaveBeenCalledTimes(2)
+      await expect(target.driver.run(target.manager().effect.inspect('shop'))).resolves.toEqual({
+        savedAuthorization: true,
+        credentialWork: 'known-failure',
+      })
     } finally {
       run.interrupt()
       await run.exit
-      await driver.dispose()
+      await target.dispose()
     }
   },
 )
 
 test.each(['5', 'Thu, 01 Jan 1970 00:00:06 GMT'])(
-  'Shopify persists Retry-After instead of sleeping beyond its backoff allowance: %s',
+  'Shopify honors a retained Retry-After before acquiring again: %s',
   async (retryAfter) => {
-    const clock = makeTestClock(1_000)
-    const driver = makeLifecycleDriver(clock.layer)
-    await driver.run(clock.initialize)
-    const fetch = vi.fn<TestFetch>(
-      async () => new Response(null, { status: 429, headers: { 'retry-after': retryAfter } }),
-    )
+    let healthy = false
+    const fetch = vi
+      .fn<TestFetch>()
+      .mockResolvedValueOnce(Response.json(tokenBody('initial')))
+      .mockImplementation(async () =>
+        healthy
+          ? Response.json(tokenBody('recovered'))
+          : new Response(null, { status: 429, headers: { 'retry-after': retryAfter } }),
+      )
     vi.stubGlobal('fetch', fetch)
+    const target = await fixture()
     try {
-      expect(
-        await driver.run(provider().refreshCredentials({ protectedPayload: payload, now: 1_000 })),
-      ).toEqual({
-        _tag: 'ProviderFailure',
-        recovery: { _tag: 'ReplaySafe', retryUntil: 2_592_001_000, retryAt: 6_000 },
+      await expect(
+        target.driver.run(target.manager().effect.credentials('shop')),
+      ).rejects.toMatchObject({
+        _tag: 'TemporarilyUnavailable',
       })
-      expect(fetch).toHaveBeenCalledTimes(1)
-      expect(await driver.run(clock.now)).toBe(1_000)
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(await target.driver.run(target.clock.now)).toBe(1_000)
+      healthy = true
+      await target.driver.run(target.clock.advanceBy(4_999))
+      await expect(
+        target.driver.run(target.manager().effect.credentials('shop')),
+      ).rejects.toMatchObject({
+        _tag: 'TemporarilyUnavailable',
+      })
+      expect(fetch).toHaveBeenCalledTimes(2)
+      await target.driver.run(target.clock.advanceBy(1))
+      const credentials = await target.driver.run(target.manager().effect.credentials('shop'))
+      expect(revealSecret(credentials.accessToken)).toBe('recovered')
+      expect(fetch).toHaveBeenCalledTimes(3)
     } finally {
-      await driver.dispose()
+      await target.dispose()
     }
   },
 )
