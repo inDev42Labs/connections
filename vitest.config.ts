@@ -5,7 +5,6 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     exclude: [
       ...configDefaults.exclude,
-      'experiments/**',
       'tests/package/**',
       'tests/process-loss/**',
       'tests/stores/convex/**',

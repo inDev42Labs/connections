@@ -35,6 +35,11 @@
       "import": "./dist/encryptors/aes-gcm.mjs",
       "default": "./dist/encryptors/aes-gcm.mjs"
     },
+    "./providers/amazon": {
+      "types": "./dist/providers/amazon.d.mts",
+      "import": "./dist/providers/amazon.mjs",
+      "default": "./dist/providers/amazon.mjs"
+    },
     "./providers/api-key": {
       "types": "./dist/providers/api-key.d.mts",
       "import": "./dist/providers/api-key.mjs",

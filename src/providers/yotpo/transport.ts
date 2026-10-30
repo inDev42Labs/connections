@@ -4,7 +4,7 @@ import type {
   ClientCredentialsProviderDefinition,
   ProviderClientCredentialsOutcome,
 } from '../../core/contracts/provider.js'
-import { readBoundedJsonResponse } from '../internal/http.js'
+import { postCredentialRequest } from '../internal/http.js'
 import {
   parseStoredCredentials,
   parseTokenResponse,
@@ -15,51 +15,10 @@ import {
 } from './responses.js'
 
 const tokenUrl = new URL('https://api.yotpo.com/oauth/token')
-const timeoutMilliseconds = 30_000
-
-type TokenResponse =
-  | { readonly _tag: 'HttpFailure'; readonly status: number }
-  | { readonly _tag: 'Success'; readonly body: unknown }
-
 export type YotpoFetch = typeof fetch
 
 export interface YotpoV1Configuration {
   readonly fetch?: YotpoFetch
-}
-
-function tokenPost(
-  fetchImplementation: YotpoFetch,
-  body: string,
-): Effect.Effect<TokenResponse, unknown> {
-  return Effect.tryPromise({
-    try: async (effectSignal) => {
-      const controller = new AbortController()
-      const abort = () => controller.abort()
-      effectSignal.addEventListener('abort', abort, { once: true })
-      const timeout = setTimeout(abort, timeoutMilliseconds)
-      try {
-        const response = await fetchImplementation(tokenUrl, {
-          method: 'POST',
-          headers: {
-            accept: 'application/json',
-            'content-type': 'application/json',
-          },
-          body,
-          redirect: 'error',
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          void response.body?.cancel().catch(() => undefined)
-          return { _tag: 'HttpFailure' as const, status: response.status }
-        }
-        return { _tag: 'Success' as const, body: await readBoundedJsonResponse(response) }
-      } finally {
-        clearTimeout(timeout)
-        effectSignal.removeEventListener('abort', abort)
-      }
-    },
-    catch: (error) => error,
-  })
 }
 
 function httpFailure(status: number): ProviderClientCredentialsOutcome {
@@ -75,14 +34,16 @@ function acquireCredentials(
   const previous = parseStoredCredentials(Redacted.value(input.protectedPayload))
   if (previous === null) return Effect.succeed({ _tag: 'ProviderFailure' })
 
-  return tokenPost(
-    fetchImplementation,
-    JSON.stringify({
+  return postCredentialRequest({
+    fetch: fetchImplementation,
+    url: tokenUrl,
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify({
       client_id: previous.storeId,
       client_secret: previous.apiSecret,
       grant_type: 'client_credentials',
     }),
-  ).pipe(
+  }).pipe(
     Effect.matchEffect({
       onFailure: () =>
         Effect.succeed<ProviderClientCredentialsOutcome>({ _tag: 'ProviderOutcomeUnknown' }),

@@ -1,7 +1,5 @@
 import {
   connectionStorageKey,
-  credentialOperationCommandKey,
-  storeCommandKey,
   type AuthorizationAttemptLookup,
   type ConnectionKey,
   type CredentialOperationCommand,
@@ -16,6 +14,7 @@ import {
 } from '../internal/persisted-record-decoder.js'
 import {
   transitionCredentialOperation,
+  transitionRecordKeys,
   transitionStoreCommand,
   type StoreTransition,
   type StoredAuthorizationAttempt,
@@ -63,45 +62,12 @@ function row(value: unknown): PostgreSQLRow | null {
   return value as PostgreSQLRow
 }
 
-function commandKey(command: StoredCommand): ConnectionKey {
-  return command._tag === 'InitializeConnection' ||
-    command._tag === 'CreateAuthorizationAttempt' ||
-    command._tag === 'AdmitAuthorizationAttempt' ||
-    command._tag === 'CloseAuthorizationAttempt' ||
-    command._tag === 'CompleteAuthorizationAttempt'
-    ? storeCommandKey(command)
-    : credentialOperationCommandKey(command)
-}
-
-function commandAttemptIdentity(
-  command: StoredCommand,
-): { readonly namespace: string; readonly stateDigest: string } | null {
-  switch (command._tag) {
-    case 'CreateAuthorizationAttempt':
-      return {
-        namespace: command.attempt.key.namespace,
-        stateDigest: command.attempt.stateDigest,
-      }
-    case 'AdmitAuthorizationAttempt':
-    case 'CompleteAuthorizationAttempt':
-      return {
-        namespace: command.admission.key.namespace,
-        stateDigest: command.admission.stateDigest,
-      }
-    case 'CloseAuthorizationAttempt':
-      return { namespace: command.key.namespace, stateDigest: command.stateDigest }
-    default:
-      return null
-  }
-}
-
 function lockIdentities(command: StoredCommand, scope: string): readonly string[] {
-  const key = commandKey(command)
+  const { key, attempt } = transitionRecordKeys(command)
   const identities = [
     `0:request:${JSON.stringify([scope, key.namespace, command.request.requestId])}`,
     `1:connection:${JSON.stringify([scope, key.namespace, key.providerId, key.connectionId])}`,
   ]
-  const attempt = commandAttemptIdentity(command)
   if (attempt !== null) {
     identities.push(`2:attempt:${JSON.stringify([scope, attempt.namespace, attempt.stateDigest])}`)
   }
@@ -334,24 +300,17 @@ export class PostgreSQLPersistence {
   }
 
   async #records(client: PostgreSQLClient, command: StoredCommand): Promise<TransitionRecords> {
-    const key = commandKey(command)
+    const { key } = transitionRecordKeys(command)
     const connection = await this.#readConnection(client, key, true)
-    let attempt: StoredAuthorizationAttempt | null = null
-    const attemptIdentity = commandAttemptIdentity(command)
-    if (attemptIdentity !== null) {
-      attempt = await this.#readAuthorizationAttempt(client, attemptIdentity, true)
-    }
-    const selectedAttempt =
-      connection?.authorizationAttemptStateDigest === null || connection === null
+    const selection = transitionRecordKeys(command, connection)
+    const attempt =
+      selection.attempt === null
         ? null
-        : await this.#readAuthorizationAttempt(
-            client,
-            {
-              namespace: key.namespace,
-              stateDigest: connection.authorizationAttemptStateDigest,
-            },
-            true,
-          )
+        : await this.#readAuthorizationAttempt(client, selection.attempt, true)
+    const selectedAttempt =
+      selection.selectedAttempt === null
+        ? null
+        : await this.#readAuthorizationAttempt(client, selection.selectedAttempt, true)
     const receiptResult = await client.query(
       `SELECT schema_version, command_kind, input_digest, result_json
        FROM ${this.#receiptsTable} WHERE namespace = $1 AND request_id = $2 FOR UPDATE`,
@@ -385,7 +344,7 @@ export class PostgreSQLPersistence {
     if (writes.connection !== undefined) await this.#writeConnection(client, writes.connection)
     for (const stored of writes.attempts ?? []) await this.#writeAttempt(client, stored)
     if (writes.receipt !== undefined) {
-      const key = commandKey(command)
+      const { key } = transitionRecordKeys(command)
       await client.query(
         `INSERT INTO ${this.#receiptsTable}
            (namespace, request_id, schema_version, command_kind, input_digest, result_json)

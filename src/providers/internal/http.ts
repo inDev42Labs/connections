@@ -1,4 +1,64 @@
+import { Effect } from 'effect'
+
 const maximumJsonResponseBytes = 1024 * 1024
+
+export type CredentialHttpResponse =
+  | { readonly _tag: 'Success'; readonly body: unknown }
+  | {
+      readonly _tag: 'HttpFailure'
+      readonly status: number
+      readonly retryAfter: string | null
+      readonly body: unknown
+    }
+
+/** Owns the request and body lifetime; provider adapters interpret the returned evidence. */
+export function postCredentialRequest(options: {
+  readonly url: URL
+  readonly body: string | URLSearchParams
+  readonly headers: Readonly<Record<string, string>>
+  readonly fetch?: (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>
+  readonly errorBodyStatuses?: readonly number[]
+}): Effect.Effect<CredentialHttpResponse, unknown> {
+  return Effect.tryPromise({
+    try: async (effectSignal) => {
+      const controller = new AbortController()
+      const abort = () => controller.abort()
+      effectSignal.addEventListener('abort', abort, { once: true })
+      if (effectSignal.aborted) abort()
+      const timeout = setTimeout(abort, 30_000)
+      try {
+        const response = await (options.fetch ?? fetch)(options.url, {
+          method: 'POST',
+          headers: options.headers,
+          body: options.body,
+          redirect: 'error',
+          signal: controller.signal,
+        })
+        try {
+          if (response.ok) {
+            return { _tag: 'Success' as const, body: await readBoundedJsonResponse(response) }
+          }
+          const body = options.errorBodyStatuses?.includes(response.status)
+            ? await readBoundedJsonResponse(response).catch(() => null)
+            : null
+          return {
+            _tag: 'HttpFailure' as const,
+            status: response.status,
+            retryAfter: response.headers.get('retry-after'),
+            body,
+          }
+        } finally {
+          // Discard unread error bodies and cancel readers abandoned by a read failure.
+          void response.body?.cancel().catch(() => undefined)
+        }
+      } finally {
+        clearTimeout(timeout)
+        effectSignal.removeEventListener('abort', abort)
+      }
+    },
+    catch: (error) => error,
+  })
+}
 
 export class MalformedJsonResponse extends Error {}
 
@@ -8,15 +68,7 @@ export function oauthErrorCode(body: unknown): string | null {
   return typeof error === 'string' ? error : null
 }
 
-export async function readOAuthErrorCode(response: Response): Promise<string | null> {
-  try {
-    return oauthErrorCode(await readBoundedJsonResponse(response))
-  } catch {
-    return null
-  }
-}
-
-export async function readBoundedJsonResponse(response: Response): Promise<unknown> {
+async function readBoundedJsonResponse(response: Response): Promise<unknown> {
   const contentLength = response.headers.get('content-length')
   if (
     contentLength !== null &&

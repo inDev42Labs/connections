@@ -6,12 +6,7 @@ import { makeInMemoryStore } from '../fixtures/in-memory-store.js'
 import { makeTestClock } from '../fixtures/lifecycle-driver.js'
 import { makeYotpoTokenSubstitute, yotpoTokenResponse } from '../fixtures/yotpo-server.js'
 import { Yotpo } from '../../src/providers/yotpo/index.js'
-
-const connectionKey = (connectionId: string) => ({
-  namespace: 'default',
-  providerId: 'deterministic-client-credentials',
-  connectionId,
-})
+import { Memory } from '../../src/stores/memory/index.js'
 
 function fixture() {
   const provider = makeDeterministicClientCredentialsProvider()
@@ -27,55 +22,87 @@ afterEach(() => {
 })
 
 describe('client credentials enrollment interface', () => {
-  test('enrolls and explicitly replaces provider-specific sources locally without acquisition', async () => {
-    const provider = makeDeterministicClientCredentialsProvider()
-    const store = makeInMemoryStore()
-    const manager = Connections.create({ provider: provider.provider, store })
+  test('keeps enrollment and replacement local and only uses deliberately selected sources', async () => {
+    const server = makeYotpoTokenSubstitute([
+      yotpoTokenResponse({ access_token: 'first-token' }),
+      yotpoTokenResponse({ access_token: 'replacement-token' }),
+    ])
+    const manager = Connections.create({
+      provider: Yotpo.clientCredentials({ version: 'v1', fetch: server.fetch as typeof fetch }),
+      store: Memory.store({ encryptionKey: 'KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio=' }),
+    })
     const connection = manager.effect
 
     await Effect.runPromise(
       connection.setClientCredentials(
         'conn_acme',
-        { source: Redacted.make('first-source') },
+        { storeId: 'acme-store', apiSecret: Redacted.make('first-source') },
         { replace: false },
       ),
     )
-    const enrolled = store.unsafeReadConnection(connectionKey('conn_acme'))
     await expect(
       Effect.runPromise(
         Effect.flip(
           connection.setClientCredentials(
             'conn_acme',
-            { source: Redacted.make('second-source') },
+            { storeId: 'acme-store', apiSecret: Redacted.make('second-source') },
             { replace: false },
           ),
         ),
       ),
     ).resolves.toMatchObject({ _tag: 'CredentialConfigurationFailure', reason: 'Conflict' })
-    expect(store.unsafeReadConnection(connectionKey('conn_acme'))).toEqual(enrolled)
+    expect(server.requests()).toEqual([])
+    const first = await Effect.runPromise(connection.credentials('conn_acme'))
+    expect(Redacted.value(first.accessToken)).toBe('first-token')
+    expect(server.requests().map((request) => JSON.parse(String(request.init?.body)))).toEqual([
+      {
+        client_id: 'acme-store',
+        client_secret: 'first-source',
+        grant_type: 'client_credentials',
+      },
+    ])
 
     await Effect.runPromise(
       connection.setClientCredentials(
         'conn_acme',
-        { source: Redacted.make('replacement-source') },
+        { storeId: 'replacement-store', apiSecret: Redacted.make('replacement-source') },
         { replace: true },
       ),
     )
-    expect(store.unsafeReadConnection(connectionKey('conn_acme'))?.generation).toBe(1)
-    expect(provider.requests()).toBe(0)
+    expect(server.requests()).toHaveLength(1)
+    const current = await Effect.runPromise(connection.credentials('conn_acme'))
+    expect(Redacted.value(current.accessToken)).toBe('replacement-token')
+    expect(current.storeId).toBe('replacement-store')
+    expect(server.requests().map((request) => JSON.parse(String(request.init?.body)))).toEqual([
+      {
+        client_id: 'acme-store',
+        client_secret: 'first-source',
+        grant_type: 'client_credentials',
+      },
+      {
+        client_id: 'replacement-store',
+        client_secret: 'replacement-source',
+        grant_type: 'client_credentials',
+      },
+    ])
   })
 
   test('keeps application-defined connection IDs independently enrolled and inspection local', async () => {
-    const provider = makeDeterministicClientCredentialsProvider()
-    const store = makeInMemoryStore()
-    const manager = Connections.create({ provider: provider.provider, store })
+    const server = makeYotpoTokenSubstitute([
+      yotpoTokenResponse({ access_token: 'acme-token' }),
+      yotpoTokenResponse({ access_token: 'globex-token' }),
+    ])
+    const manager = Connections.create({
+      provider: Yotpo.clientCredentials({ version: 'v1', fetch: server.fetch as typeof fetch }),
+      store: Memory.store({ encryptionKey: 'KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio=' }),
+    })
     const acme = manager.effect
     const globex = manager.effect
 
     await Effect.runPromise(
       acme.setClientCredentials(
         'tenant_acme',
-        { source: Redacted.make('acme-source') },
+        { storeId: 'acme-store', apiSecret: Redacted.make('acme-source') },
         { replace: false },
       ),
     )
@@ -88,10 +115,35 @@ describe('client credentials enrollment interface', () => {
       savedAuthorization: false,
       credentialWork: 'idle',
     })
-    expect(store.unsafeReadConnection(connectionKey('tenant_acme'))).not.toEqual(
-      store.unsafeReadConnection(connectionKey('tenant_globex')),
+    expect(server.requests()).toEqual([])
+    await Effect.runPromise(
+      globex.setClientCredentials('tenant_globex', {
+        storeId: 'globex-store',
+        apiSecret: Redacted.make('globex-source'),
+      }),
     )
-    expect(provider.requests()).toBe(0)
+    expect(server.requests()).toEqual([])
+    const acmeCredentials = await Effect.runPromise(acme.credentials('tenant_acme'))
+    const globexCredentials = await Effect.runPromise(globex.credentials('tenant_globex'))
+    expect(Redacted.value(acmeCredentials.accessToken)).toBe('acme-token')
+    expect(acmeCredentials.storeId).toBe('acme-store')
+    expect(Redacted.value(globexCredentials.accessToken)).toBe('globex-token')
+    expect(globexCredentials.storeId).toBe('globex-store')
+    expect(
+      Redacted.value((await Effect.runPromise(acme.credentials('tenant_acme'))).accessToken),
+    ).toBe('acme-token')
+    expect(server.requests().map((request) => JSON.parse(String(request.init?.body)))).toEqual([
+      {
+        client_id: 'acme-store',
+        client_secret: 'acme-source',
+        grant_type: 'client_credentials',
+      },
+      {
+        client_id: 'globex-store',
+        client_secret: 'globex-source',
+        grant_type: 'client_credentials',
+      },
+    ])
   })
 
   test('keeps removal local and lazy', async () => {

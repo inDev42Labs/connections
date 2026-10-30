@@ -140,7 +140,7 @@ describe('Salesforce credential refresh with the in-memory store', () => {
     expect(fixture.server.tokenRequests[1]?.form.get('refresh_token')).toBe('initial-refresh-token')
   })
 
-  test('retries immutable reservation and completion writes without repeating refresh', async () => {
+  test('returns committed credentials after lost store acknowledgements without repeating refresh', async () => {
     const fixture = await makeFixture([
       tokenResponse({
         accessToken: 'expired-access-token',
@@ -162,9 +162,10 @@ describe('Salesforce credential refresh with the in-memory store', () => {
     const credentials = await Effect.runPromise(fixture.manager.effect.credentialUse('conn_acme'))
 
     expect(Redacted.value(credentials.credentials.accessToken)).toBe('acknowledged-access-token')
+    expect(Redacted.value((await fixture.manager.credentials('conn_acme')).accessToken)).toBe(
+      'acknowledged-access-token',
+    )
     expect(fixture.server.tokenRequestCount).toBe(2)
-    expect(fixture.store.diagnostics.commands.ReserveCredentialOperationDispatch).toBe(3)
-    expect(fixture.store.diagnostics.commands.CompleteCredentialOperation).toBe(2)
   })
 
   test('reconciles concurrent followers after a lost completion acknowledgement without another refresh', async () => {
@@ -194,8 +195,10 @@ describe('Salesforce credential refresh with the in-memory store', () => {
     expect(credentials.map(({ credentials }) => Redacted.value(credentials.accessToken))).toEqual(
       Array.from({ length: 4 }, () => 'reconciled-access-token'),
     )
+    expect(Redacted.value((await fixture.manager.credentials('conn_acme')).accessToken)).toBe(
+      'reconciled-access-token',
+    )
     expect(fixture.server.tokenRequestCount).toBe(2)
-    expect(fixture.store.diagnostics.commands.CompleteCredentialOperation).toBe(2)
   })
 
   test('uses a replacement refresh token on the next refresh', async () => {

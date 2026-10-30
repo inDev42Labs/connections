@@ -1,3 +1,4 @@
+import { Effect } from 'effect'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { Connections, revealSecret } from '../../src/index.js'
 import { Zoho } from '../../src/providers/zoho/index.js'
@@ -52,6 +53,73 @@ async function prepareBrowserEnrollment(manager: ReturnType<typeof browserManage
 }
 
 afterEach(() => vi.unstubAllGlobals())
+
+describe('removal confirms current state after store acknowledgement', () => {
+  for (const execution of ['promise', 'effect'] as const) {
+    for (const loseAcknowledgement of [false, true]) {
+      test.each([false, true])(
+        `${execution}: delayed removal acknowledgement, lost: ${loseAcknowledgement}, reenrolled: %s`,
+        async (reenroll) => {
+          vi.stubGlobal('fetch', async (_url: string | URL | Request, init?: RequestInit) =>
+            tokenResponse(requestCode(init)),
+          )
+          const store = makeInMemoryStore()
+          const manager = Connections.create({
+            store,
+            provider: Zoho.selfClient({
+              clientId: 'client-id',
+              clientSecret: 'client-secret',
+              accountsOrigin: 'https://accounts.zoho.example',
+            }),
+          })
+          const enroll = (code: string) =>
+            manager.enrollCode(connectionId, { code, authorize: async () => undefined })
+          await enroll('initial-code')
+          const hold = store.holdNext('RemoveConnection', 'after')
+          if (loseAcknowledgement) store.loseNextAcknowledgement('RemoveConnection')
+          const removal = (
+            execution === 'promise'
+              ? manager.remove(connectionId)
+              : Effect.runPromise(manager.effect.remove(connectionId))
+          ).then(
+            () => ({ succeeded: true }),
+            (failure: unknown) => ({ failure }),
+          )
+          try {
+            await hold.reached
+            await expect(manager.inspect(connectionId)).resolves.toEqual({
+              savedAuthorization: false,
+              credentialWork: 'idle',
+            })
+            if (reenroll) await enroll('fresh-code')
+            hold.release()
+            await expect(removal).resolves.toMatchObject(
+              reenroll
+                ? { failure: { _tag: 'RemovalFailure', reason: 'Conflict' } }
+                : { succeeded: true },
+            )
+            await expect(manager.inspect(connectionId)).resolves.toEqual({
+              savedAuthorization: reenroll,
+              credentialWork: 'idle',
+            })
+            const readAfterRemoval = await manager.credentials(connectionId).then(
+              (credentials) => ({ accessToken: revealSecret(credentials.accessToken) }),
+              (failure: unknown) => failure,
+            )
+            expect(readAfterRemoval).toMatchObject(
+              reenroll
+                ? { accessToken: 'access-for-fresh-code' }
+                : { _tag: 'AuthorizationRequired' },
+            )
+          } finally {
+            hold.release()
+            await removal
+          }
+        },
+      )
+    }
+  }
+})
 
 describe('removal fences initial enrollment through public managers', () => {
   test.each([false, true])(

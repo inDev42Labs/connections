@@ -8,7 +8,11 @@ import type {
   ProviderRefreshOutcome,
   RefreshCredentialInput,
 } from '../../core/contracts/provider.js'
-import { MalformedJsonResponse, readBoundedJsonResponse } from '../internal/http.js'
+import {
+  MalformedJsonResponse,
+  postCredentialRequest,
+  type CredentialHttpResponse,
+} from '../internal/http.js'
 import {
   parseShopDomain,
   parseStoredCredentials,
@@ -37,7 +41,6 @@ export interface ShopifyOAuthConfiguration<Requirements = never> {
 
 const authorizationPath = '/admin/oauth/authorize'
 const tokenPath = '/admin/oauth/access_token'
-const timeoutMilliseconds = 30_000
 const maximumRefreshAttempts = 3
 const maximumRefreshMilliseconds = 25_000
 const refreshBackoffMilliseconds = [250, 750] as const
@@ -46,10 +49,6 @@ const refreshReplayWindowMilliseconds = 30 * 24 * 60 * 60 * 1_000
 const requiredCallbackParameters = ['code', 'state', 'shop', 'hmac'] as const
 const optionalCallbackParameters = new Set(['host', 'timestamp'])
 const callbackParameters = new Set([...requiredCallbackParameters, ...optionalCallbackParameters])
-
-type TokenResponse =
-  | { readonly _tag: 'HttpFailure'; readonly status: number; readonly retryAfter: string | null }
-  | { readonly _tag: 'Success'; readonly body: unknown }
 
 function resolveText<Requirements>(
   value: ShopifyText<Requirements>,
@@ -322,43 +321,22 @@ function parseAuthorizationCallback<Requirements>(
 function tokenPost(
   url: URL,
   body: URLSearchParams,
-): Effect.Effect<TokenResponse, ShopifyTransportFailure> {
-  return Effect.tryPromise({
-    try: async (effectSignal) => {
-      const controller = new AbortController()
-      const abort = () => controller.abort()
-      effectSignal.addEventListener('abort', abort, { once: true })
-      const timeout = setTimeout(abort, timeoutMilliseconds)
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            accept: 'application/json',
-            'content-type': 'application/x-www-form-urlencoded',
-          },
-          body,
-          redirect: 'error',
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          void response.body?.cancel().catch(() => undefined)
-          return {
-            _tag: 'HttpFailure' as const,
-            status: response.status,
-            retryAfter: response.headers.get('retry-after'),
-          }
-        }
-        return { _tag: 'Success' as const, body: await readBoundedJsonResponse(response) }
-      } finally {
-        clearTimeout(timeout)
-        effectSignal.removeEventListener('abort', abort)
-      }
+): Effect.Effect<CredentialHttpResponse, ShopifyTransportFailure> {
+  return postCredentialRequest({
+    url,
+    body,
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/x-www-form-urlencoded',
     },
-    catch: (error) =>
-      new ShopifyTransportFailure({
-        reason: error instanceof MalformedJsonResponse ? 'MalformedResponse' : 'TransportFailure',
-      }),
-  })
+  }).pipe(
+    Effect.mapError(
+      (error) =>
+        new ShopifyTransportFailure({
+          reason: error instanceof MalformedJsonResponse ? 'MalformedResponse' : 'TransportFailure',
+        }),
+    ),
+  )
 }
 
 function exchangeAuthorizationCode<Requirements>(

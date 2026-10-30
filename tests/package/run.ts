@@ -222,6 +222,7 @@ try {
   const exports = manifest.exports as Record<string, unknown>
   for (const entry of [
     '.',
+    './providers/amazon',
     './providers/api-key',
     './providers/salesforce',
     './providers/shopify',
@@ -268,6 +269,7 @@ try {
     'dist/stores/internal/transition-kernel.d.ts',
     'docs/getting-started.md',
     'docs/reference.md',
+    'docs/providers/amazon.md',
     'docs/providers/salesforce.md',
     'docs/providers/shopify.md',
     'docs/providers/zoho.md',
@@ -287,7 +289,12 @@ try {
     false,
     'Packed package must not include source paths required by consumers',
   )
-  for (const path of ['dist/providers/yotpo.mjs', 'dist/providers/yotpo.d.mts']) {
+  for (const path of [
+    'dist/providers/amazon.mjs',
+    'dist/providers/amazon.d.mts',
+    'dist/providers/yotpo.mjs',
+    'dist/providers/yotpo.d.mts',
+  ]) {
     assert.equal(existsSync(join(packagedRoot, path)), true, `Packed package is missing ${path}`)
   }
 

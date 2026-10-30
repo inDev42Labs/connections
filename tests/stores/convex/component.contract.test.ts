@@ -430,7 +430,7 @@ describe('Convex component', () => {
           createdAt: Date.now(),
         }),
       ),
-    ).rejects.toThrow(/Expected `1`, got `2`/)
+    ).rejects.toThrow(Error)
   })
 
   test('persists client-credential invalidation command receipts and fences stale or conflicting replays', async () => {

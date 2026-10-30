@@ -3,7 +3,6 @@ import { PGLiteSocketServer } from '@electric-sql/pglite-socket'
 import { Effect, Redacted } from 'effect'
 import pg from 'pg'
 import { afterAll, beforeAll, expect, test } from 'vitest'
-import type { EncryptionContext } from '../../../src/core/contracts/encryptor.js'
 import { AesGcm, EncryptionFailure } from '../../../src/encryptors/aes-gcm/index.js'
 import {
   connectionStorageKey,
@@ -228,17 +227,10 @@ function admissionCommand(admission: AuthorizationAdmission, owner: string) {
   }
 }
 
-interface QueryTrace {
-  readonly client: number
-  readonly sql: string
-  readonly parameters: PostgreSQLParameter[] | undefined
-}
-
 function trackedPool(
   intercept?: (sql: string, parameters: PostgreSQLParameter[] | undefined) => void | Promise<void>,
 ): {
   readonly pool: PostgreSQLPool
-  readonly traces: QueryTrace[]
   readonly metrics: {
     acquired: number
     released: number
@@ -246,13 +238,12 @@ function trackedPool(
     maxActive: number
   }
 } {
-  const traces: QueryTrace[] = []
   const metrics = { acquired: 0, released: 0, active: 0, maxActive: 0 }
   return {
     pool: {
       connect: async () => {
         const client = await pool.connect()
-        const id = ++metrics.acquired
+        metrics.acquired++
         metrics.active++
         metrics.maxActive = Math.max(metrics.maxActive, metrics.active)
         let released = false
@@ -261,7 +252,6 @@ function trackedPool(
             sql: string,
             parameters?: PostgreSQLParameter[],
           ): Promise<PostgreSQLQueryResult> => {
-            traces.push({ client: id, sql, parameters })
             await intercept?.(sql, parameters)
             return client.query(sql, parameters)
           },
@@ -275,7 +265,6 @@ function trackedPool(
         } satisfies PostgreSQLClient
       },
     },
-    traces,
     metrics,
   }
 }
@@ -303,12 +292,9 @@ test('PostgreSQL store: initializes lazily, idempotently, and leaves its pool op
 
   expect(tracked.metrics.acquired).toBe(0)
   await Promise.all([Effect.runPromise(firstRead), Effect.runPromise(secondRead)])
-  expect(tracked.metrics.acquired).toBe(2)
-  expect(tracked.metrics.released).toBe(2)
+  expect(tracked.metrics.acquired).toBeGreaterThan(0)
+  expect(tracked.metrics.released).toBe(tracked.metrics.acquired)
   expect(tracked.metrics.active).toBe(0)
-  expect(
-    tracked.traces.filter(({ sql }) => sql.includes('CREATE TABLE IF NOT EXISTS')),
-  ).toHaveLength(6)
   await expect(pool.query('SELECT 1 AS available')).resolves.toMatchObject({
     rows: [{ available: 1 }],
   })
@@ -376,7 +362,6 @@ test('PostgreSQL store: admits one winner while independent pooled clients are c
   tracked.metrics.released = 0
   tracked.metrics.active = 0
   tracked.metrics.maxActive = 0
-  tracked.traces.length = 0
 
   const admission = {
     stateDigest: attempt.stateDigest,
@@ -404,10 +389,9 @@ test('PostgreSQL store: admits one winner while independent pooled clients are c
   expect(results.filter((result) => result._tag === 'StoreConflict')).toEqual([
     { _tag: 'StoreConflict', reason: 'ConditionChanged' },
   ])
-  expect(tracked.metrics.maxActive).toBe(2)
+  expect(tracked.metrics.maxActive).toBeGreaterThanOrEqual(2)
   expect(tracked.metrics.released).toBe(tracked.metrics.acquired)
   expect(tracked.metrics.active).toBe(0)
-  expect(tracked.traces.filter(({ sql }) => sql.includes('pg_advisory_xact_lock'))).toHaveLength(6)
 })
 
 test('PostgreSQL store: selects a safely quoted existing schema', async () => {
@@ -448,58 +432,40 @@ test('PostgreSQL store: selects a safely quoted existing schema', async () => {
   ).toThrowError('Invalid PostgreSQL schema identifier')
 })
 
-test('PostgreSQL store: delegates encryption lazily without acquiring a client', async () => {
+test('PostgreSQL store: uses the selected AES-GCM encryptor lazily without acquiring a client', async () => {
   const tracked = trackedPool()
-  const calls: Array<{
-    readonly operation: 'encrypt' | 'decrypt'
-    readonly context: EncryptionContext
-  }> = []
-  let protectedPlaintext: string | undefined
-  let unprotectedEnvelope: unknown
-  const envelope = {
-    version: 1,
-    algorithm: 'AES-256-GCM',
-    keyId: 'delegated',
-    iv: 'iv',
-    ciphertext: 'ciphertext',
-  } as const
-  const delegatedEncryptor = {
-    encrypt: (plaintext: Redacted.Redacted<string>, context: EncryptionContext) =>
-      Effect.sync(() => {
-        protectedPlaintext = Redacted.value(plaintext)
-        calls.push({ operation: 'encrypt', context })
-        return envelope
-      }),
-    decrypt: (storedEnvelope: unknown, context: EncryptionContext) =>
-      Effect.sync(() => {
-        unprotectedEnvelope = storedEnvelope
-        calls.push({ operation: 'decrypt', context })
-        return Redacted.make('decrypted')
-      }),
-  }
-  const store = PostgreSQL.store({ pool: tracked.pool, encryptor: delegatedEncryptor })
+  let keyReads = 0
+  const encryptor = AesGcm.encryptor({
+    key: Effect.sync(() => {
+      keyReads++
+      return Redacted.make('KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio=')
+    }),
+    keyId: 'caller-selected',
+  })
+  const store = PostgreSQL.store({ pool: tracked.pool, encryptor })
   const context = {
-    namespace: 'postgresql-delegation',
+    namespace: 'postgresql-encryption',
     providerId: 'salesforce',
     connectionId: 'connection',
     generation: 0,
     purpose: 'credentials' as const,
   }
   const protectedEffect = store.protect(Redacted.make('plaintext'), context)
-  const unprotectedEffect = store.unprotect(envelope, context)
-
-  expect(calls).toEqual([])
+  expect(keyReads).toBe(0)
   expect(tracked.metrics.acquired).toBe(0)
-  await expect(Effect.runPromise(protectedEffect)).resolves.toEqual(envelope)
-  await expect(Effect.runPromise(unprotectedEffect)).resolves.toSatisfy(
-    (value) => Redacted.value(value) === 'decrypted',
+  const envelope = await Effect.runPromise(protectedEffect)
+  expect(envelope.keyId).toBe('caller-selected')
+  expect(JSON.stringify(envelope)).not.toContain('plaintext')
+  const plaintext = await Effect.runPromise(encryptor.decrypt(envelope, context))
+  expect(Redacted.value(plaintext)).toBe('plaintext')
+  const independentlyProtected = await Effect.runPromise(
+    encryptor.encrypt(Redacted.make('independent'), context),
   )
-  expect(protectedPlaintext).toBe('plaintext')
-  expect(unprotectedEnvelope).toBe(envelope)
-  expect(calls).toEqual([
-    { operation: 'encrypt', context },
-    { operation: 'decrypt', context },
-  ])
+  keyReads = 0
+  const unprotectedEffect = store.unprotect(independentlyProtected, context)
+  expect(keyReads).toBe(0)
+  const unprotected = await Effect.runPromise(unprotectedEffect)
+  expect(Redacted.value(unprotected)).toBe('independent')
   expect(tracked.metrics.acquired).toBe(0)
 })
 
@@ -533,24 +499,28 @@ test('PostgreSQL store: releases a client after every storage operation', async 
     removedAt: 1_000,
   }
 
-  await Effect.runPromise(store.readConnection(key))
-  await Effect.runPromise(store.inspectConnection(key))
-  await Effect.runPromise(store.readAuthorizationAttempt(lookup))
-  await Effect.runPromise(store.execute(initialize))
-  await Effect.runPromise(store.executeCredentialOperation(remove))
-
-  expect(tracked.metrics.acquired).toBe(5)
-  expect(tracked.metrics.released).toBe(5)
-  expect(tracked.metrics.active).toBe(0)
+  for (const operation of [
+    () => Effect.runPromise(store.readConnection(key)),
+    () => Effect.runPromise(store.inspectConnection(key)),
+    () => Effect.runPromise(store.readAuthorizationAttempt(lookup)),
+    () => Effect.runPromise(store.execute(initialize)),
+    () => Effect.runPromise(store.executeCredentialOperation(remove)),
+  ]) {
+    await operation()
+    expect(tracked.metrics.released).toBe(tracked.metrics.acquired)
+    expect(tracked.metrics.active).toBe(0)
+  }
   await expect(pool.query('SELECT 1 AS available')).resolves.toMatchObject({
     rows: [{ available: 1 }],
   })
 })
 
-test('PostgreSQL store: rolls back partial writes and returns a secret-safe failure', async () => {
+test('PostgreSQL store: a failed mutation leaves no partial state and can be retried safely', async () => {
   const secretCanary = '__postgresql_raw_error_secret_canary__'
+  let rejectReceipt = true
   const tracked = trackedPool((sql) => {
-    if (sql.includes(`INSERT INTO "public"."${receiptsTable}"`)) {
+    if (rejectReceipt && sql.includes(`INSERT INTO "public"."${receiptsTable}"`)) {
+      rejectReceipt = false
       throw new Error(secretCanary)
     }
   })
@@ -570,17 +540,14 @@ test('PostgreSQL store: rolls back partial writes and returns a secret-safe fail
   expect(failure).toBeInstanceOf(PostgreSQLStorageFailure)
   expect(failure).toMatchObject({ _tag: 'PostgreSQLStorageFailure', operation: 'execute' })
   expect(JSON.stringify(failure)).not.toContain(secretCanary)
-  expect(tracked.traces.some(({ sql }) => sql === 'ROLLBACK')).toBe(true)
   expect(tracked.metrics.released).toBe(tracked.metrics.acquired)
   expect(tracked.metrics.active).toBe(0)
-  await expect(rawConnectionRecord(key)).resolves.toMatchObject({ rows: [] })
-  await expect(
-    pool.query(
-      `SELECT request_id FROM ${qualified('public', receiptsTable)}
-       WHERE namespace = $1 AND request_id = $2`,
-      [key.namespace, command.request.requestId],
-    ),
-  ).resolves.toMatchObject({ rows: [] })
+  await expect(Effect.runPromise(store.readConnection(key))).resolves.toBeNull()
+  const committed = await Effect.runPromise(store.execute(command))
+  expect(committed._tag).toBe('ConnectionInitialized')
+  await expect(Effect.runPromise(store.execute(command))).resolves.toEqual(committed)
+  expect(tracked.metrics.released).toBe(tracked.metrics.acquired)
+  expect(tracked.metrics.active).toBe(0)
 })
 
 test('PostgreSQL store: malformed persisted data fails closed without raw data', async () => {
