@@ -4,7 +4,7 @@
   "categories": {
     "correctness": "error"
   },
-  "ignorePatterns": ["dist/**", "coverage/**", "experiments/**", "**/_generated/**"],
+  "ignorePatterns": ["dist/**", "coverage/**", "**/_generated/**"],
   "rules": {
     "import/no-cycle": "error",
     "no-restricted-imports": "off"

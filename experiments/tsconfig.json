@@ -1,4 +1,0 @@
-{
-  "extends": "../tsconfig.json",
-  "include": ["effect-wiring/**/*.ts", "refresh/**/*.ts", "lifecycle/**/*.ts"]
-}

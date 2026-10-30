@@ -25,7 +25,7 @@ Keep getting started focused on common workflows through representative examples
 
 Keep consumer behavior in `docs/`, exact declarations in code, schemas, and configuration, actionable remaining work and implementation plans in issues, and consequential rationale in decision records. Do not recreate completed initiatives or obsolete targets.
 
-Update the semantic owner and affected links when a claim changes. Keep historical versions in Git. `experiments/` contains isolated historical evidence, not production code or an API contract. Read an experiment only to answer its named design question; implement and verify through `src/` and `tests/`, without importing experiment modules.
+Update the semantic owner and affected links when a claim changes. Keep historical versions in Git.
 
 ## Approve material behavior changes
 
