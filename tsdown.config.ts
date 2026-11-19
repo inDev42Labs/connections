@@ -4,6 +4,7 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts',
     'encryptors/aes-gcm': 'src/encryptors/aes-gcm/index.ts',
+    'providers/amazon': 'src/providers/amazon/index.ts',
     'providers/api-key': 'src/providers/api-key/index.ts',
     'providers/salesforce': 'src/providers/salesforce/index.ts',
     'providers/shopify': 'src/providers/shopify/index.ts',

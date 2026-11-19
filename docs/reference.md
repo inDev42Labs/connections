@@ -33,6 +33,7 @@ Methods appear only when the configured provider supports them. `options` defaul
 
 | Provider definition | Mechanism | Setup distinction |
 | --- | --- | --- |
+| `Amazon.oauth({ clientId, clientSecret, redirectUri, scopes, region? })` | Browser OAuth (Login with Amazon) | Configurable scopes; see [Amazon authorization and Ads setup](providers/amazon.md). |
 | `ApiKey.opaque({ id })` | Opaque API key | Choose a stable ID; save a key locally. No provider network request on save. |
 | `Salesforce.oauth({ clientId, clientSecret, redirectUri, scopes })` | Browser OAuth | See [Salesforce browser OAuth](providers/salesforce.md#browser-oauth). |
 | `Salesforce.clientCredentials({ loginUrl })` | Source-to-derived client credentials | See [Salesforce client credentials](providers/salesforce.md#client-credentials). |

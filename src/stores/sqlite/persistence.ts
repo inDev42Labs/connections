@@ -1,7 +1,5 @@
 import {
   connectionStorageKey,
-  credentialOperationCommandKey,
-  storeCommandKey,
   type AuthorizationAttemptLookup,
   type ConnectionKey,
   type ConnectionSnapshot,
@@ -18,6 +16,7 @@ import {
 import {
   projectConnection,
   transitionCredentialOperation,
+  transitionRecordKeys,
   transitionStoreCommand,
   type StoreTransition,
   type StoredAuthorizationAttempt,
@@ -63,16 +62,6 @@ function row(value: unknown): SQLiteRow | null {
     throw new TypeError('Invalid SQLite row')
   }
   return value as SQLiteRow
-}
-
-function commandKey(command: StoredCommand): ConnectionKey {
-  return command._tag === 'InitializeConnection' ||
-    command._tag === 'CreateAuthorizationAttempt' ||
-    command._tag === 'AdmitAuthorizationAttempt' ||
-    command._tag === 'CloseAuthorizationAttempt' ||
-    command._tag === 'CompleteAuthorizationAttempt'
-    ? storeCommandKey(command)
-    : credentialOperationCommandKey(command)
 }
 
 function clone<Value>(value: Value): Value {
@@ -197,37 +186,14 @@ export class SQLitePersistence {
   }
 
   #records(command: StoredCommand): TransitionRecords {
-    const key = commandKey(command)
+    const { key } = transitionRecordKeys(command)
     const connection = this.connection(key)
-    let attempt: StoredAuthorizationAttempt | null = null
-    switch (command._tag) {
-      case 'CreateAuthorizationAttempt':
-        attempt = this.authorizationAttempt({
-          namespace: command.attempt.key.namespace,
-          stateDigest: command.attempt.stateDigest,
-        })
-        break
-      case 'AdmitAuthorizationAttempt':
-      case 'CompleteAuthorizationAttempt':
-        attempt = this.authorizationAttempt({
-          namespace: command.admission.key.namespace,
-          stateDigest: command.admission.stateDigest,
-        })
-        break
-      case 'CloseAuthorizationAttempt':
-        attempt = this.authorizationAttempt({
-          namespace: command.key.namespace,
-          stateDigest: command.stateDigest,
-        })
-        break
-    }
+    const selection = transitionRecordKeys(command, connection)
+    const attempt = selection.attempt === null ? null : this.authorizationAttempt(selection.attempt)
     const selectedAttempt =
-      connection?.authorizationAttemptStateDigest === null || connection === null
+      selection.selectedAttempt === null
         ? null
-        : this.authorizationAttempt({
-            namespace: key.namespace,
-            stateDigest: connection.authorizationAttemptStateDigest,
-          })
+        : this.authorizationAttempt(selection.selectedAttempt)
     const storedReceipt = row(
       this.#get(
         `SELECT schema_version, command_kind, input_digest, result_json
@@ -263,7 +229,7 @@ export class SQLitePersistence {
     if (writes.connection !== undefined) this.#writeConnection(writes.connection)
     for (const stored of writes.attempts ?? []) this.#writeAttempt(stored)
     if (writes.receipt !== undefined) {
-      const key = commandKey(command)
+      const { key } = transitionRecordKeys(command)
       this.#run(
         `INSERT INTO ${receiptsTable}
            (namespace, request_id, schema_version, command_kind, input_digest, result_json)

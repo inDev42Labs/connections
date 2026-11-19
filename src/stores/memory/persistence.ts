@@ -1,7 +1,5 @@
 import {
   connectionStorageKey,
-  credentialOperationCommandKey,
-  storeCommandKey,
   type AuthorizationAttemptLookup,
   type ConnectionKey,
   type CredentialOperationCommand,
@@ -10,6 +8,7 @@ import {
 } from '../../core/contracts/store.js'
 import {
   transitionCredentialOperation,
+  transitionRecordKeys,
   transitionStoreCommand,
   type StoreTransition,
   type StoredAuthorizationAttempt,
@@ -65,44 +64,14 @@ export class MemoryPersistence {
   }
 
   #records(command: StoredCommand): TransitionRecords {
-    const key =
-      command._tag === 'InitializeConnection' ||
-      command._tag === 'CreateAuthorizationAttempt' ||
-      command._tag === 'AdmitAuthorizationAttempt' ||
-      command._tag === 'CloseAuthorizationAttempt' ||
-      command._tag === 'CompleteAuthorizationAttempt'
-        ? storeCommandKey(command)
-        : credentialOperationCommandKey(command)
+    const { key } = transitionRecordKeys(command)
     const connection = this.connection(key)
-    let attempt: StoredAuthorizationAttempt | null = null
-    switch (command._tag) {
-      case 'CreateAuthorizationAttempt':
-        attempt = this.authorizationAttempt({
-          namespace: command.attempt.key.namespace,
-          stateDigest: command.attempt.stateDigest,
-        })
-        break
-      case 'AdmitAuthorizationAttempt':
-      case 'CompleteAuthorizationAttempt':
-        attempt = this.authorizationAttempt({
-          namespace: command.admission.key.namespace,
-          stateDigest: command.admission.stateDigest,
-        })
-        break
-      case 'CloseAuthorizationAttempt':
-        attempt = this.authorizationAttempt({
-          namespace: command.key.namespace,
-          stateDigest: command.stateDigest,
-        })
-        break
-    }
+    const selection = transitionRecordKeys(command, connection)
+    const attempt = selection.attempt === null ? null : this.authorizationAttempt(selection.attempt)
     const selectedAttempt =
-      connection?.authorizationAttemptStateDigest === null || connection === null
+      selection.selectedAttempt === null
         ? null
-        : this.authorizationAttempt({
-            namespace: key.namespace,
-            stateDigest: connection.authorizationAttemptStateDigest,
-          })
+        : this.authorizationAttempt(selection.selectedAttempt)
     const receipt = this.#receipts.get(receiptStorageKey(key.namespace, command.request.requestId))
     return {
       connection,
@@ -124,14 +93,7 @@ export class MemoryPersistence {
       )
     }
     if (writes.receipt !== undefined) {
-      const key =
-        command._tag === 'InitializeConnection' ||
-        command._tag === 'CreateAuthorizationAttempt' ||
-        command._tag === 'AdmitAuthorizationAttempt' ||
-        command._tag === 'CloseAuthorizationAttempt' ||
-        command._tag === 'CompleteAuthorizationAttempt'
-          ? storeCommandKey(command)
-          : credentialOperationCommandKey(command)
+      const { key } = transitionRecordKeys(command)
       this.#receipts.set(
         receiptStorageKey(key.namespace, command.request.requestId),
         clone(writes.receipt),

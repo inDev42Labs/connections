@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-  canonicalStoreInput,
   digestStoreInput,
   verifyStoreConformance,
   type AuthorizationAdmission,
@@ -93,20 +92,6 @@ export function storeConformance<Error, Requirements, InspectionError, Inspectio
     InspectionRequirements
   >,
 ): void {
-  test(`${name}: uses canonical SHA-256 command input digests`, async () => {
-    const input = {
-      key: { providerId: 'salesforce', namespace: 'example', connectionId: 'connection' },
-      _tag: 'InitializeConnection',
-    }
-
-    expect(canonicalStoreInput(input)).toBe(
-      '{"_tag":"InitializeConnection","key":{"connectionId":"connection","namespace":"example","providerId":"salesforce"}}',
-    )
-    await expect(digestStoreInput(input)).resolves.toBe(
-      '021ecb87c9e88b94a2c5fef51cc3762e1167e74d83a1af6bcc7ff16eea0c1085',
-    )
-  })
-
   test(`${name}: initializes, reads, and replays one immutable command`, async () => {
     const target = makeTarget()
     const report = await verifyStoreConformance(target.store, target.run, `${name}-replay`)

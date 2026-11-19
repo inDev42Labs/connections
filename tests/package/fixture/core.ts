@@ -1,3 +1,4 @@
+import './amazon.js'
 import { Connections } from '@indev42/connections'
 import packageManifest from '@indev42/connections/package.json' with { type: 'json' }
 import { Effect, Redacted } from 'effect'

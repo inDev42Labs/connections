@@ -4,7 +4,7 @@ import type {
   ClientCredentialsProviderDefinition,
   ProviderClientCredentialsOutcome,
 } from '../../core/contracts/provider.js'
-import { readBoundedJsonResponse } from '../internal/http.js'
+import { postCredentialRequest } from '../internal/http.js'
 import { configuredUrl, type SalesforceText } from './transport.js'
 import type { SalesforceCredentials } from './responses.js'
 import {
@@ -50,65 +50,39 @@ function acquireCredentials<Requirements>(
           _tag: 'ProviderFailure',
           recovery: 'NotDispatched',
         })
-      return Effect.tryPromise({
-        try: async (
-          effectSignal,
-        ): Promise<
-          ProviderClientCredentialsOutcome | { readonly _tag: 'Response'; readonly body: unknown }
-        > => {
-          const controller = new AbortController()
-          const abort = () => controller.abort()
-          effectSignal.addEventListener('abort', abort, { once: true })
-          const timeout = setTimeout(abort, 30_000)
-          try {
-            const response = await (options.fetch ?? fetch)(
-              new URL('/services/oauth2/token', loginUrl),
-              {
-                method: 'POST',
-                headers: {
-                  accept: 'application/json',
-                  'content-type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({
-                  grant_type: 'client_credentials',
-                  client_id: previous.clientId,
-                  client_secret: previous.clientSecret,
-                }),
-                redirect: 'error',
-                signal: controller.signal,
-              },
-            )
-            if (!response.ok) {
-              void response.body?.cancel().catch(() => undefined)
-              if (response.status === 400 || response.status === 401)
-                return { _tag: 'ProviderRejected' }
-              if (response.status === 429 || response.status >= 500)
-                return { _tag: 'ProviderOutcomeUnknown' }
-              return { _tag: 'ProviderFailure' }
-            }
-            return { _tag: 'Response', body: await readBoundedJsonResponse(response) }
-          } finally {
-            clearTimeout(timeout)
-            effectSignal.removeEventListener('abort', abort)
-          }
+      return postCredentialRequest({
+        ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+        url: new URL('/services/oauth2/token', loginUrl),
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/x-www-form-urlencoded',
         },
-        catch: (error) => error,
+        body: new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: previous.clientId,
+          client_secret: previous.clientSecret,
+        }),
       }).pipe(
-        Effect.flatMap((response) =>
-          response._tag !== 'Response'
-            ? Effect.succeed(response)
-            : parseTokenResponse(response.body, previous, input.now).pipe(
-                Effect.match({
-                  onFailure: (): ProviderClientCredentialsOutcome => ({
-                    _tag: 'ProviderOutcomeUnknown',
-                  }),
-                  onSuccess: (credentials): ProviderClientCredentialsOutcome => ({
-                    _tag: 'Acquired',
-                    credentials,
-                  }),
-                }),
-              ),
-        ),
+        Effect.flatMap((response): Effect.Effect<ProviderClientCredentialsOutcome> => {
+          if (response._tag === 'HttpFailure') {
+            if (response.status === 400 || response.status === 401)
+              return Effect.succeed({ _tag: 'ProviderRejected' })
+            if (response.status === 429 || response.status >= 500)
+              return Effect.succeed({ _tag: 'ProviderOutcomeUnknown' })
+            return Effect.succeed({ _tag: 'ProviderFailure' })
+          }
+          return parseTokenResponse(response.body, previous, input.now).pipe(
+            Effect.match({
+              onFailure: (): ProviderClientCredentialsOutcome => ({
+                _tag: 'ProviderOutcomeUnknown',
+              }),
+              onSuccess: (credentials): ProviderClientCredentialsOutcome => ({
+                _tag: 'Acquired',
+                credentials,
+              }),
+            }),
+          )
+        }),
         Effect.catch(() =>
           Effect.succeed<ProviderClientCredentialsOutcome>({ _tag: 'ProviderOutcomeUnknown' }),
         ),

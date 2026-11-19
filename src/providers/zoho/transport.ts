@@ -8,12 +8,7 @@ import type {
   ProviderRefreshOutcome,
   RefreshCredentialInput,
 } from '../../core/contracts/provider.js'
-import {
-  MalformedJsonResponse,
-  oauthErrorCode,
-  readBoundedJsonResponse,
-  readOAuthErrorCode,
-} from '../internal/http.js'
+import { MalformedJsonResponse, oauthErrorCode, postCredentialRequest } from '../internal/http.js'
 import {
   parseAuthorizationCodeResponse,
   parseRefreshResponse,
@@ -54,7 +49,6 @@ export interface ZohoSelfClientCodeExchangeInput {
 
 const authorizationPath = '/oauth/v2/auth'
 const tokenPath = '/oauth/v2/token'
-const timeoutMilliseconds = 30_000
 const callbackParameters = new Set(['code', 'state', 'error', 'error_description', 'error_uri'])
 
 type TokenResponse =
@@ -275,63 +269,49 @@ function tokenPost(
   oneTimeCode = false,
   refresh = false,
 ): Effect.Effect<TokenResponse, ZohoTransportFailure> {
-  return Effect.tryPromise({
-    try: async (effectSignal) => {
-      const controller = new AbortController()
-      const abort = () => controller.abort()
-      effectSignal.addEventListener('abort', abort, { once: true })
-      const timeout = setTimeout(abort, timeoutMilliseconds)
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'content-type': 'application/x-www-form-urlencoded' },
-          body,
-          redirect: 'error',
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          if (refresh) {
-            if (response.status === 400 || response.status === 401) {
-              const error = await readOAuthErrorCode(response)
-              return error === 'invalid_code'
-                ? { _tag: 'ProviderRejected' as const }
-                : { _tag: 'ProviderFailure' as const }
-            }
-            void response.body?.cancel().catch(() => undefined)
-            return { _tag: 'ProviderFailure' as const }
-          }
-          void response.body?.cancel().catch(() => undefined)
-          if (
-            oneTimeCode &&
-            (response.status === 408 || response.status === 429 || response.status >= 500)
-          ) {
-            throw new ZohoTransportFailure({ reason: 'TransportFailure' })
-          }
-          return { _tag: 'ProviderRejected' as const }
-        }
-        const responseBody = await readBoundedJsonResponse(response)
+  return postCredentialRequest({
+    url,
+    body,
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    errorBodyStatuses: refresh ? [400, 401] : [],
+  }).pipe(
+    Effect.flatMap((response): Effect.Effect<TokenResponse, ZohoTransportFailure> => {
+      if (response._tag === 'HttpFailure') {
         if (refresh) {
-          const error = oauthErrorCode(responseBody)
-          // invalid_code in a refresh-token grant means the retained token is
-          // invalid or revoked. invalid_client and access_denied do not.
-          // https://www.zoho.com/books/api/v3/oauth/#step4
-          if (error !== null) {
-            return error === 'invalid_code'
-              ? { _tag: 'ProviderRejected' as const }
-              : { _tag: 'ProviderFailure' as const }
-          }
+          return Effect.succeed(
+            oauthErrorCode(response.body) === 'invalid_code'
+              ? { _tag: 'ProviderRejected' }
+              : { _tag: 'ProviderFailure' },
+          )
         }
-        return { _tag: 'Success' as const, body: responseBody }
-      } finally {
-        clearTimeout(timeout)
-        effectSignal.removeEventListener('abort', abort)
+        if (
+          oneTimeCode &&
+          (response.status === 408 || response.status === 429 || response.status >= 500)
+        ) {
+          return Effect.fail(new ZohoTransportFailure({ reason: 'TransportFailure' }))
+        }
+        return Effect.succeed({ _tag: 'ProviderRejected' })
       }
-    },
-    catch: (error) =>
-      new ZohoTransportFailure({
-        reason: error instanceof MalformedJsonResponse ? 'MalformedResponse' : 'TransportFailure',
-      }),
-  })
+      if (refresh) {
+        const error = oauthErrorCode(response.body)
+        // invalid_code in a refresh-token grant means the retained token is
+        // invalid or revoked. invalid_client and access_denied do not.
+        // https://www.zoho.com/books/api/v3/oauth/#step4
+        if (error !== null) {
+          return Effect.succeed(
+            error === 'invalid_code' ? { _tag: 'ProviderRejected' } : { _tag: 'ProviderFailure' },
+          )
+        }
+      }
+      return Effect.succeed(response)
+    }),
+    Effect.mapError(
+      (error) =>
+        new ZohoTransportFailure({
+          reason: error instanceof MalformedJsonResponse ? 'MalformedResponse' : 'TransportFailure',
+        }),
+    ),
+  )
 }
 
 function exchangeSelfClientCode<Requirements>(

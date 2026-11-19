@@ -11,7 +11,7 @@ metadata:
   library_version: '0.0.0'
 sources:
   - 'inDev42Labs/connections:README.md'
-  - 'inDev42Labs/connections:CONTEXT.md'
+  - 'inDev42Labs/connections:GLOSSARY.md'
   - 'inDev42Labs/connections:docs/getting-started.md'
   - 'inDev42Labs/connections:docs/effect.md'
   - 'inDev42Labs/connections:docs/reference.md'
@@ -31,7 +31,7 @@ Connections supplies credentials for an application-owned connection to an exter
 3. Read [Use Connections with Effect](../../docs/effect.md) when composing `manager.effect` operations, handling their failures, or running an Effect program.
 4. Read [Using Connections with Convex](../../docs/stores/convex.md) or [PostgreSQL](../../docs/stores/postgresql.md) only when that adapter is in use. Read the reference's [supported integrations](../../docs/reference.md#supported-integrations) and [retrieval failures](../../docs/reference.md#handle-retrieval-failures) for extension and recovery boundaries.
 
-Treat the linked consumer docs as the authoritative target. In a source checkout, read the root `AGENTS.md` and `CONSTITUTION.md` before changes, then use `specs/README.md` to find technical clarification and verification paths. Specs do not override docs; prior targets remain in Git. Verify implementation claims in `src/index.ts`, tests, and the relevant adapter. Stop and ask the owner if implementation requires an undocumented public contract. Custom-provider, custom-store, and custom-encryptor extension APIs are deferred. Do not add restrictions solely to block unsupported structural use or claim arbitrary Effect-service Promise execution.
+Treat the linked consumer docs as the authoritative target. In a source checkout, read the root `AGENTS.md` and `CONSTITUTION.md` before changes. Use the README's development quickstart for verification commands and evidence limits. Verify implementation claims in `src/index.ts`, tests, and the relevant adapter. Stop and ask the owner if implementation requires an undocumented public contract. Custom-provider, custom-store, and custom-encryptor extension APIs are deferred. Do not add restrictions solely to block unsupported structural use or claim arbitrary Effect-service Promise execution.
 
 ## Preserve lifecycle safety
 

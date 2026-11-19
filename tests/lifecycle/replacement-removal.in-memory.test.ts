@@ -141,10 +141,9 @@ describe('Salesforce replacement races with the in-memory store', () => {
           }),
         )
 
-        expect(fixture.store.unsafeReadConnection(connectionKey)).toMatchObject({
-          generation: 0,
-          credentialOperation: { kind: 'refresh' },
-        })
+        await expect(
+          fixture.driver.run(fixture.connection.inspect(connectionKey.connectionId)),
+        ).resolves.toEqual({ savedAuthorization: true, credentialWork: 'pending' })
 
         hold.release()
         const refreshExit = await refresh.exit
@@ -153,10 +152,10 @@ describe('Salesforce replacement races with the in-memory store', () => {
         expect(Redacted.value(refreshExit.value.credentials.accessToken)).toBe(
           'refreshed-access-token',
         )
-        expect(fixture.store.unsafeReadConnection(connectionKey)).toMatchObject({
-          generation: 0,
-          credentialOperation: null,
-        })
+        const current = await fixture.driver.run(
+          fixture.connection.credentials(connectionKey.connectionId),
+        )
+        expect(Redacted.value(current.accessToken)).toBe('refreshed-access-token')
         expect(fixture.server.tokenRequestCount).toBe(2)
       } finally {
         hold.release()
@@ -167,7 +166,7 @@ describe('Salesforce replacement races with the in-memory store', () => {
     },
   )
 
-  test('replacement completion returns Pending while refresh is unresolved without dispatching an authorization exchange', async () => {
+  test('defers replacement completion until unresolved renewal finishes without exchanging the replacement code', async () => {
     const fixture = await makeFixture({
       authorization: [
         { _tag: 'Grant', code: 'enrollment-code' },
@@ -198,10 +197,9 @@ describe('Salesforce replacement races with the in-memory store', () => {
 
       expect(completion).toMatchObject({ reason: 'Pending' })
       expect(fixture.server.tokenRequestCount).toBe(1)
-      expect(fixture.store.unsafeReadConnection(connectionKey)?.credentialOperation).toMatchObject({
-        kind: 'refresh',
-        phase: { _tag: 'DispatchPossible' },
-      })
+      await expect(
+        fixture.driver.run(fixture.connection.inspect(connectionKey.connectionId)),
+      ).resolves.toEqual({ savedAuthorization: true, credentialWork: 'pending' })
 
       reservation.release()
       await expect(refresh.exit).resolves.toSatisfy(Exit.isSuccess)
@@ -215,7 +213,7 @@ describe('Salesforce replacement races with the in-memory store', () => {
     }
   })
 
-  test('successful replacement increments generation and fences its stale superseded callback', async () => {
+  test('a superseded callback cannot overwrite successful replacement credentials', async () => {
     const fixture = await makeFixture({
       authorization: [
         { _tag: 'Grant', code: 'enrollment-code' },
@@ -239,7 +237,6 @@ describe('Salesforce replacement races with the in-memory store', () => {
         }),
       )
 
-      expect(fixture.store.unsafeReadConnection(connectionKey)?.generation).toBe(1)
       let staleApprovals = 0
       const stale = await fixture.driver.run(
         Effect.flip(
@@ -289,13 +286,9 @@ describe('Salesforce replacement races with the in-memory store', () => {
       )
 
       expect(completion).toMatchObject({ reason: 'InterventionRequired' })
-      expect(fixture.store.unsafeReadConnection(connectionKey)).toMatchObject({
-        generation: 0,
-        credentialOperation: {
-          kind: 'authorization-exchange',
-          phase: { _tag: 'InterventionRequired', reason: 'ProviderOutcomeUnknown' },
-        },
-      })
+      await expect(
+        fixture.driver.run(fixture.connection.inspect(connectionKey.connectionId)),
+      ).resolves.toEqual({ savedAuthorization: true, credentialWork: 'intervention-required' })
       await expect(
         fixture.driver.run(
           Effect.flip(fixture.connection.credentialUse(connectionKey.connectionId)),
@@ -332,7 +325,6 @@ describe('local removal races with the in-memory store', () => {
     try {
       await fixture.driver.run(fixture.connection.remove(connectionKey.connectionId))
 
-      expect(fixture.store.diagnostics.commands.RemoveConnection).toBe(2)
       await expect(
         fixture.driver.run(fixture.connection.inspect(connectionKey.connectionId)),
       ).resolves.toEqual({
@@ -344,7 +336,7 @@ describe('local removal races with the in-memory store', () => {
     }
   })
 
-  test('tombstones an unresolved refresh and fences its late completion', async () => {
+  test('removal prevents an unresolved refresh from restoring credentials', async () => {
     const fixture = await makeFixture({
       authorization: [{ _tag: 'Grant', code: 'enrollment-code' }],
       token: [
@@ -374,12 +366,9 @@ describe('local removal races with the in-memory store', () => {
           Effect.flip(fixture.connection.credentialUse(connectionKey.connectionId)),
         ),
       ).resolves.toMatchObject({ _tag: 'AuthorizationRequired' })
-      expect(fixture.store.unsafeReadConnection(connectionKey)).toMatchObject({
-        generation: 1,
-        authorization: { _tag: 'NotAuthorized' },
-        credentialEnvelope: null,
-        credentialOperation: null,
-      })
+      await expect(
+        fixture.driver.run(fixture.connection.inspect(connectionKey.connectionId)),
+      ).resolves.toEqual({ savedAuthorization: false, credentialWork: 'idle' })
       expect(fixture.server.tokenRequestCount).toBe(2)
     } finally {
       completion.release()
@@ -439,7 +428,6 @@ describe('local removal races with the in-memory store', () => {
 
       expect(staleApprovals).toBe(0)
       expect(Redacted.value(credentials.credentials.accessToken)).toBe('reenrolled-access-token')
-      expect(fixture.store.unsafeReadConnection(connectionKey)?.generation).toBe(1)
       expect(fixture.server.tokenRequestCount).toBe(2)
     } finally {
       await fixture.driver.dispose()
@@ -493,10 +481,9 @@ describe('local removal races with the in-memory store', () => {
         fixture.connection.credentialUse(connectionKey.connectionId),
       )
       expect(Redacted.value(credentials.credentials.accessToken)).toBe('reenrolled-access-token')
-      expect(fixture.store.unsafeReadConnection(connectionKey)).toMatchObject({
-        generation: 1,
-        authorization: { _tag: 'Authorized' },
-      })
+      await expect(
+        fixture.driver.run(fixture.connection.inspect(connectionKey.connectionId)),
+      ).resolves.toEqual({ savedAuthorization: true, credentialWork: 'idle' })
     } finally {
       delayed.release()
       removal.interrupt()

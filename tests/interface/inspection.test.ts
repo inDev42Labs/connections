@@ -1,10 +1,9 @@
 import { Data, Effect } from 'effect'
 import { describe, expect, test } from 'vitest'
-import { Connections, type ConnectionInspection, type InspectionFailure } from '../../src/index.js'
+import { Connections } from '../../src/index.js'
 import type { OAuthProviderDefinition } from '../../src/core/contracts/provider.js'
 import type { ConnectionStore } from '../../src/stores/index.js'
 
-class ApplicationDenied extends Data.TaggedError('ApplicationDenied')<{}> {}
 class TestStorageFailure extends Data.TaggedError('TestStorageFailure')<{}> {}
 
 interface InspectionRecord {
@@ -19,7 +18,6 @@ interface InspectionRecord {
 }
 
 function makeFixture(record: InspectionRecord | null, failRead = false) {
-  let inspectionReads = 0
   let forbiddenCalls = 0
   const forbidden = () => {
     forbiddenCalls++
@@ -36,7 +34,6 @@ function makeFixture(record: InspectionRecord | null, failRead = false) {
   const store = {
     readConnection: forbidden,
     inspectConnection: () => {
-      inspectionReads++
       return failRead ? Effect.fail(new TestStorageFailure()) : Effect.succeed(record)
     },
     readAuthorizationAttempt: forbidden,
@@ -48,7 +45,7 @@ function makeFixture(record: InspectionRecord | null, failRead = false) {
   const manager = Connections.create({ provider, store })
   return {
     connection: manager.effect,
-    diagnostics: () => ({ forbiddenCalls, inspectionReads }),
+    forbiddenCalls: () => forbiddenCalls,
   }
 }
 
@@ -79,7 +76,7 @@ describe('connection inspection interface', () => {
       { savedAuthorization: true, credentialWork: 'intervention-required' },
     ],
   ] as const)(
-    'projects %s local metadata through one read only',
+    'returns %s local metadata without decryption, provider traffic, or mutation',
     async (_name, stored, expected) => {
       const fixture = makeFixture(stored)
 
@@ -91,7 +88,7 @@ describe('connection inspection interface', () => {
       expect(Reflect.has(result, 'healthy')).toBe(false)
       expect(Reflect.has(result, 'valid')).toBe(false)
       expect(Reflect.has(result, 'credentialExpiresAt')).toBe(false)
-      expect(fixture.diagnostics()).toEqual({ forbiddenCalls: 0, inspectionReads: 1 })
+      expect(fixture.forbiddenCalls()).toBe(0)
     },
   )
 
@@ -102,26 +99,6 @@ describe('connection inspection interface', () => {
       _tag: 'InspectionFailure',
       reason: 'StorageFailure',
     })
-    expect(fixture.diagnostics()).toEqual({ forbiddenCalls: 0, inspectionReads: 1 })
-  })
-
-  test('application denial and cross-connection authority stop before the store read', async () => {
-    const fixture = makeFixture(record(true, 'idle'))
-    const allowed = new Set(['conn_acme'])
-    const inspectAsApplication = (
-      callerAllowed: boolean,
-      connectionId: string,
-    ): Effect.Effect<ConnectionInspection, InspectionFailure | ApplicationDenied> =>
-      callerAllowed && allowed.has(connectionId)
-        ? fixture.connection.inspect('conn_acme')
-        : Effect.fail(new ApplicationDenied())
-
-    await expect(Effect.runPromise(inspectAsApplication(false, 'conn_acme'))).rejects.toThrow(
-      ApplicationDenied,
-    )
-    await expect(Effect.runPromise(inspectAsApplication(true, 'conn_globex'))).rejects.toThrow(
-      ApplicationDenied,
-    )
-    expect(fixture.diagnostics()).toEqual({ forbiddenCalls: 0, inspectionReads: 0 })
+    expect(fixture.forbiddenCalls()).toBe(0)
   })
 })

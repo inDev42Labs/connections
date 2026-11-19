@@ -4,5 +4,5 @@
   "singleQuote": true,
   "sortImports": false,
   "sortPackageJson": false,
-  "ignorePatterns": ["dist/**", "coverage/**", "experiments/**", "**/_generated/**", "bun.lock"]
+  "ignorePatterns": ["dist/**", "coverage/**", "**/_generated/**", "bun.lock"]
 }

@@ -1,5 +1,15 @@
 import { Clock, Effect, type Exit, type Layer, ManagedRuntime } from 'effect'
 import { TestClock as EffectTestClock } from 'effect/testing'
+import { vi } from 'vitest'
+
+export async function waitForLifecycle(check: () => boolean): Promise<void> {
+  await vi.waitFor(
+    () => {
+      if (!check()) throw new Error('Lifecycle did not reach expected checkpoint')
+    },
+    { timeout: 2_000, interval: 5 },
+  )
+}
 
 export interface TestClock {
   readonly layer: Layer.Layer<EffectTestClock.TestClock>

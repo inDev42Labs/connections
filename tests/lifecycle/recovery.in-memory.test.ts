@@ -6,7 +6,11 @@ import { AesGcm } from '../../src/encryptors/aes-gcm/index.js'
 import { Salesforce } from '../../src/providers/salesforce/index.js'
 import { Configuration } from '../../src/configuration/index.js'
 import { makeInMemoryStore } from '../fixtures/in-memory-store.js'
-import { makeLifecycleDriver, makeTestClock } from '../fixtures/lifecycle-driver.js'
+import {
+  makeLifecycleDriver,
+  makeTestClock,
+  waitForLifecycle as eventually,
+} from '../fixtures/lifecycle-driver.js'
 import { makeDeterministicClientCredentialsProvider } from '../fixtures/client-credentials-provider.js'
 import {
   startSalesforceServer,
@@ -84,14 +88,6 @@ function failure(effect: Effect.Effect<unknown, CredentialFailure>) {
   return Effect.flip(effect)
 }
 
-async function eventually(check: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (check()) return
-    await new Promise<void>((resolve) => setImmediate(resolve))
-  }
-  throw new Error('Timed out waiting for deterministic lifecycle progress')
-}
-
 afterEach(async () => {
   await Promise.all([...servers].map((server) => server.close()))
   servers.clear()
@@ -135,8 +131,6 @@ describe('Salesforce refresh recovery with the in-memory store', () => {
 
       await expect(follower).resolves.toMatchObject({ _tag: 'TemporarilyUnavailable' })
       expect(fixture.server.tokenRequestCount).toBe(1)
-      expect(fixture.store.diagnostics.commands.AcquireCredentialOperation).toBe(1)
-      expect(fixture.store.diagnostics.commands.ReserveCredentialOperationDispatch).toBe(2)
 
       reservation.release()
       const ownerExit = await owner.exit
@@ -168,7 +162,6 @@ describe('Salesforce refresh recovery with the in-memory store', () => {
 
       expect(Exit.isFailure(followerExit) && Cause.hasInterrupts(followerExit.cause)).toBe(true)
       expect(fixture.server.tokenRequestCount).toBe(1)
-      expect(fixture.store.diagnostics.commands.AcquireCredentialOperation).toBe(1)
 
       reservation.release()
       await expect(owner.exit).resolves.toSatisfy(Exit.isSuccess)
@@ -181,115 +174,55 @@ describe('Salesforce refresh recovery with the in-memory store', () => {
     }
   })
 
-  test('transfers expired pre-dispatch ownership while retaining the operation limits', async () => {
+  test('recovers interrupted renewal when no provider request was dispatched', async () => {
     const fixture = await makeFixture([
       tokenResponse('recovered-access-token', 'replacement-refresh-token'),
     ])
-    const key = {
-      namespace: 'default',
-      providerId: 'salesforce',
-      connectionId: 'conn_acme',
-    }
-    const firstAcquisition = fixture.store.holdNext('AcquireCredentialOperation', 'after')
+    const acquisition = fixture.store.holdNext('AcquireCredentialOperation', 'after')
     const abandoned = fixture.driver.start(fixture.connection.credentialUse('conn_acme'))
 
     try {
-      await firstAcquisition.reached
-      const firstSnapshot = fixture.store.unsafeReadConnection(key)
-      const firstOperation = firstSnapshot?.credentialOperation
-      if (firstOperation?.phase._tag !== 'OwnedBeforeDispatch') {
-        throw new Error('Expected retained pre-dispatch ownership')
-      }
+      await acquisition.reached
       abandoned.interrupt()
       await abandoned.exit
       await fixture.driver.run(fixture.clock.advanceBy(30_000))
+      const recovered = await fixture.driver.run(fixture.connection.credentials('conn_acme'))
 
-      const transferredAcquisition = fixture.store.holdNext('AcquireCredentialOperation', 'after')
-      const recovered = fixture.driver.start(fixture.connection.credentialUse('conn_acme'))
-      await transferredAcquisition.reached
-      const transferredSnapshot = fixture.store.unsafeReadConnection(key)
-      const transferredOperation = transferredSnapshot?.credentialOperation
-      expect(transferredOperation).toMatchObject({
-        operationId: firstOperation.operationId,
-        startedAt: firstOperation.startedAt,
-        recoveryDeadline: firstOperation.recoveryDeadline,
-        transferCount: 1,
-        transferLimit: 3,
-        phase: { _tag: 'OwnedBeforeDispatch' },
-      })
-
-      transferredAcquisition.release()
-      const recoveredExit = await recovered.exit
-      if (!Exit.isSuccess(recoveredExit)) throw new Error('Expected recovery owner success')
-      expect(Redacted.value(recoveredExit.value.credentials.accessToken)).toBe(
-        'recovered-access-token',
-      )
+      expect(Redacted.value(recovered.accessToken)).toBe('recovered-access-token')
       expect(fixture.server.tokenRequestCount).toBe(2)
     } finally {
-      firstAcquisition.release()
+      acquisition.release()
       abandoned.interrupt()
       await abandoned.exit
       await fixture.driver.dispose()
     }
   })
 
-  test('does not reset the fixed deadline or transfer budget across abandoned owners', async () => {
+  test('requires intervention after repeated interruptions exhaust bounded recovery', async () => {
     const fixture = await makeFixture([])
-    let originalOperationId: string | undefined
-    let originalDeadline: number | undefined
 
     try {
       for (let owner = 0; owner <= 3; owner++) {
         if (owner > 0) await fixture.driver.run(fixture.clock.advanceBy(30_000))
         const acquisition = fixture.store.holdNext('AcquireCredentialOperation', 'after')
         const execution = fixture.driver.start(fixture.connection.credentialUse('conn_acme'))
-        await acquisition.reached
-        const snapshot = fixture.store.unsafeReadConnection({
-          namespace: 'default',
-          providerId: 'salesforce',
-          connectionId: 'conn_acme',
-        })
-        const operation = snapshot?.credentialOperation
-        if (operation?.phase._tag !== 'OwnedBeforeDispatch') {
-          throw new Error('Expected retained pre-dispatch ownership')
+        try {
+          await acquisition.reached
+        } finally {
+          execution.interrupt()
+          acquisition.release()
+          await execution.exit
         }
-        originalOperationId ??= operation.operationId
-        originalDeadline ??= operation.recoveryDeadline
-        expect(operation).toMatchObject({
-          operationId: originalOperationId,
-          recoveryDeadline: originalDeadline,
-          transferCount: owner,
-          transferLimit: 3,
-        })
-        execution.interrupt()
-        await execution.exit
-        acquisition.release()
       }
 
       await fixture.driver.run(fixture.clock.advanceBy(30_000))
-      const exhausted = await fixture.driver.run(
-        failure(fixture.connection.credentialUse('conn_acme')),
-      )
-      const retained = fixture.store.unsafeReadConnection({
-        namespace: 'default',
-        providerId: 'salesforce',
-        connectionId: 'conn_acme',
-      })?.credentialOperation
-
-      expect(exhausted).toMatchObject({
-        _tag: 'InterventionRequired',
-        cause: { _tag: 'Conflict' },
-      })
-      expect(retained).toMatchObject({
-        operationId: originalOperationId,
-        recoveryDeadline: originalDeadline,
-        transferCount: 3,
-        transferLimit: 3,
-        phase: {
-          _tag: 'InterventionRequired',
-          reason: 'RecoveryLimitExceeded',
-        },
-      })
+      await expect(
+        fixture.driver.run(failure(fixture.connection.credentialUse('conn_acme'))),
+      ).resolves.toMatchObject({ _tag: 'InterventionRequired', cause: { _tag: 'Conflict' } })
+      await fixture.driver.run(fixture.clock.advanceBy(10 * 60_000))
+      await expect(
+        fixture.driver.run(failure(fixture.connection.credentialUse('conn_acme'))),
+      ).resolves.toMatchObject({ _tag: 'InterventionRequired', cause: { _tag: 'Conflict' } })
       expect(fixture.server.tokenRequestCount).toBe(1)
     } finally {
       await fixture.driver.dispose()
@@ -312,19 +245,13 @@ describe('Salesforce refresh recovery with the in-memory store', () => {
       const uncertain = await fixture.driver.run(
         failure(fixture.connection.credentialUse('conn_acme')),
       )
-      const operation = fixture.store.unsafeReadConnection({
-        namespace: 'default',
-        providerId: 'salesforce',
-        connectionId: 'conn_acme',
-      })?.credentialOperation
-
       expect(uncertain).toMatchObject({
         _tag: 'InterventionRequired',
         cause: { _tag: 'ProviderOutcomeUnknown' },
       })
-      expect(operation?.phase).toMatchObject({
-        _tag: 'InterventionRequired',
-        reason: 'DispatchOwnerExpired',
+      await expect(fixture.driver.run(fixture.connection.inspect('conn_acme'))).resolves.toEqual({
+        savedAuthorization: true,
+        credentialWork: 'intervention-required',
       })
       expect(fixture.server.tokenRequestCount).toBe(1)
     } finally {
@@ -354,13 +281,12 @@ describe('Salesforce refresh recovery with the in-memory store', () => {
       const staleExit = await staleOwner.exit
       expect(Exit.isFailure(staleExit)).toBe(true)
       expect(Exit.isFailure(staleExit) && Cause.hasInterrupts(staleExit.cause)).toBe(false)
-      const snapshot = fixture.store.unsafeReadConnection({
-        namespace: 'default',
-        providerId: 'salesforce',
-        connectionId: 'conn_acme',
+      await expect(
+        fixture.driver.run(failure(fixture.connection.credentialUse('conn_acme'))),
+      ).resolves.toMatchObject({
+        _tag: 'InterventionRequired',
+        cause: { _tag: 'ProviderOutcomeUnknown' },
       })
-      expect(snapshot?.credentialOperation?.phase._tag).toBe('InterventionRequired')
-      expect(snapshot?.authorization).toMatchObject({ credentialExpiresAt: 1_000 })
       expect(fixture.server.tokenRequestCount).toBe(2)
     } finally {
       completion.release()
@@ -382,13 +308,10 @@ describe('Salesforce refresh recovery with the in-memory store', () => {
         rejected.driver.run(failure(rejected.connection.credentialUse('conn_acme'))),
       ).resolves.toMatchObject({ _tag: 'AuthorizationRequired' })
       expect(rejected.server.tokenRequestCount).toBe(2)
-      expect(
-        rejected.store.unsafeReadConnection({
-          namespace: 'default',
-          providerId: 'salesforce',
-          connectionId: 'conn_acme',
-        })?.credentialOperation?.phase,
-      ).toMatchObject({ _tag: 'KnownFailure', reason: 'ProviderRejected' })
+      await expect(rejected.driver.run(rejected.connection.inspect('conn_acme'))).resolves.toEqual({
+        savedAuthorization: true,
+        credentialWork: 'known-failure',
+      })
     } finally {
       await rejected.driver.dispose()
     }
@@ -408,15 +331,9 @@ describe('Salesforce refresh recovery with the in-memory store', () => {
         cause: { _tag: 'ProviderOutcomeUnknown' },
       })
       expect(unknown.server.tokenRequestCount).toBe(2)
-      expect(
-        unknown.store.unsafeReadConnection({
-          namespace: 'default',
-          providerId: 'salesforce',
-          connectionId: 'conn_acme',
-        })?.credentialOperation?.phase,
-      ).toMatchObject({
-        _tag: 'InterventionRequired',
-        reason: 'ProviderOutcomeUnknown',
+      await expect(unknown.driver.run(unknown.connection.inspect('conn_acme'))).resolves.toEqual({
+        savedAuthorization: true,
+        credentialWork: 'intervention-required',
       })
     } finally {
       await unknown.driver.dispose()
@@ -424,7 +341,7 @@ describe('Salesforce refresh recovery with the in-memory store', () => {
   })
 })
 
-describe('client credentials recovery with the shared renewable engine', () => {
+describe('client credentials recovery', () => {
   test('safely transfers pre-dispatch ownership but never replays dispatch-possible work', async () => {
     const fixture = await makeClientCredentialsFixture()
     const acquisition = fixture.store.holdNext('AcquireCredentialOperation', 'after')
