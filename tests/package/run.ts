@@ -210,7 +210,7 @@ try {
   )
   assert.deepEqual(
     manifest.peerDependencies,
-    { convex: '>=1.45.0 <1.46.0' },
+    { convex: '>=1.45.0 <1.52.0' },
     'Convex must declare the supported consumer-provided range',
   )
   assert.deepEqual(
@@ -457,7 +457,7 @@ Connections.create({ store: Memory.store({ encryptionKey: 'AQEBAQEBAQEBAQEBAQEBA
   const consumerManifest = readJson(join(consumer, 'package.json'))
   consumerManifest.dependencies = {
     ...(consumerManifest.dependencies as Record<string, unknown>),
-    convex: '1.45.0',
+    convex: '1.51.0',
   }
   consumerManifest.devDependencies = {
     '@neondatabase/serverless': '1.1.0',

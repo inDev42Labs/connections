@@ -134,7 +134,7 @@
     "@types/node": "^26.1.1",
     "@types/pg": "8.23.1",
     "bumpp": "^11.1.0",
-    "convex": "1.45.0",
+    "convex": "1.51.0",
     "convex-test": "0.0.56",
     "oxfmt": "^0.67.0",
     "oxlint": "^1.82.0",
@@ -148,7 +148,7 @@
     "effect": "^4.0.0-rc.112"
   },
   "peerDependencies": {
-    "convex": ">=1.45.0 <1.46.0"
+    "convex": ">=1.45.0 <1.52.0"
   },
   "peerDependenciesMeta": {
     "convex": {
